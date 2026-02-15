@@ -7,7 +7,7 @@
     "emitDecoratorMetadata": true,
 
     /* Modules */
-    "module": "ESNext",
+    "module": "commonjs",
     "moduleResolution": "Node",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,

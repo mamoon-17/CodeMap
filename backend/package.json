@@ -1,7 +1,6 @@
 {
   "name": "codemap-backend",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "dev": "nodemon",
     "build": "tsc",
