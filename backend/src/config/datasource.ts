@@ -19,7 +19,7 @@ class AppDataSource {
         ssl: {
           rejectUnauthorized: false,
         },
-        entities: [__dirname + "/entity/*{.js,.ts}"],
+        entities: [__dirname + "/../modules/**/*.entity.{js,ts}"],
         synchronize: true,
       });
     }
