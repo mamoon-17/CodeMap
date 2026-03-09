@@ -5,13 +5,35 @@ import { Result, err, ok } from "neverthrow";
 import { appDataSource } from "../../config/datasource";
 import { Project, ProjectStatus } from "./project.entity";
 
+const SUPPORTED_EXTENSIONS = new Set([
+  ".js",
+  ".ts",
+  ".py",
+  ".java",
+  ".cpp",
+  ".c",
+  ".cs",
+  ".go",
+  ".rb",
+  ".php",
+  ".swift",
+  ".kt",
+  ".rs",
+  ".html",
+  ".css",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml",
+]);
+
 function walkDir(dir: string): string[] {
   const results: string[] = [];
   for (const file of fs.readdirSync(dir)) {
     const full = path.join(dir, file);
     if (fs.statSync(full).isDirectory()) {
       results.push(...walkDir(full));
-    } else {
+    } else if (SUPPORTED_EXTENSIONS.has(path.extname(file).toLowerCase())) {
       results.push(full);
     }
   }
