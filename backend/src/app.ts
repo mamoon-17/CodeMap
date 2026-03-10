@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import userRoutes from "./modules/user/user.routes";
+import queryRoutes from "./modules/query/query.routes";
 
 const app = express();
 
@@ -9,6 +10,7 @@ app.use(cookieParser());
 
 // Routes
 app.use("/users", userRoutes);
+app.use("/query", queryRoutes);
 
 // Error-handling middleware, this is where next(error) lands
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

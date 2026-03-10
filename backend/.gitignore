@@ -10,3 +10,18 @@ build/
 *.swo
 package-lock.json
 yarn.lock
+readme/
+documentation/
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+npm-debug.log*
+
+# OS files
+Thumbs.db

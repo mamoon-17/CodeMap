@@ -4,9 +4,11 @@
   "scripts": {
     "dev": "nodemon",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "node tests/integration.spec.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
