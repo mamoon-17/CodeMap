@@ -1,30 +1,16 @@
 import { DataSource } from "typeorm";
-import { Result, ok, err } from "neverthrow";
+import { User } from "../modules/user/user.entity";
 import { config } from "./config";
 
-class AppDataSource {
-  private dataSource?: DataSource;
+export const AppDataSource = new DataSource({
+  type: "postgres",
+  url: process.env.SUPABASE_URI || config.getSupabaseUri(),
+  ssl: {
+    rejectUnauthorized: false,
+  },
+  entities: [User],
+  synchronize: true,
+  dropSchema: true, // TEMPORARY: Will drop and recreate schema on startup
+  logging: false,
+});
 
-  getInstance(): Result<DataSource, string> {
-    if (!config.isInitialized()) {
-      return err(
-        "Config not initialized. Call config.init() before using AppDataSource",
-      );
-    }
-
-    if (!this.dataSource) {
-      this.dataSource = new DataSource({
-        type: "postgres",
-        url: config.getSupabaseUri(),
-        ssl: {
-          rejectUnauthorized: false,
-        },
-        entities: [__dirname + "/entity/*{.js,.ts}"],
-        synchronize: true,
-      });
-    }
-    return ok(this.dataSource);
-  }
-}
-
-export const appDataSource = new AppDataSource();

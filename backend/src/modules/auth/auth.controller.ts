@@ -367,7 +367,8 @@ export class AuthController {
   }
 
   async refreshToken(req: Request, res: Response): Promise<void> {
-    const { refreshToken } = req.body;
+    // Check both cookies and body for refresh token
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
 
     if (!refreshToken || typeof refreshToken !== "string") {
       res.status(400).json({

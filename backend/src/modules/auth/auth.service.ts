@@ -1,38 +1,21 @@
 import { Repository } from "typeorm";
 import { User, AuthProvider } from "../user/user.entity";
-import { appDataSource } from "../../config/datasource";
+import { AppDataSource } from "../../config/datasource";
 import { ok, err, Result } from "neverthrow";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { OAuthDto } from "./dto/oauth.dto";
 
 export class AuthService {
-  private userRepository: Repository<User> | null = null;
-
-  private getUserRepository(): Result<Repository<User>, string> {
-    if (this.userRepository) {
-      return ok(this.userRepository);
-    }
-
-    const dataSourceResult = appDataSource.getInstance();
-    if (dataSourceResult.isErr()) {
-      return err(dataSourceResult.error);
-    }
-
-    this.userRepository = dataSourceResult.value.getRepository(User);
-    return ok(this.userRepository);
+  private getUserRepository(): Repository<User> {
+    return AppDataSource.getRepository(User);
   }
 
   async register(
     dto: RegisterDto,
     hashedPassword: string,
   ): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       // Check if user already exists
@@ -62,12 +45,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       const user = await repository.findOne({
@@ -92,12 +70,7 @@ export class AuthService {
   }
 
   async findOrCreateOAuthUser(dto: OAuthDto): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       // Check by provider ID first
@@ -153,12 +126,7 @@ export class AuthService {
   }
 
   async createGuestUser(): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       const guestUsername = `guest_${Date.now()}`;
@@ -185,12 +153,7 @@ export class AuthService {
     userId: string,
     refreshToken: string | null,
   ): Promise<Result<void, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       await repository.update(userId, { refreshToken });
@@ -202,12 +165,7 @@ export class AuthService {
   }
 
   async findById(userId: string): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       const user = await repository.findOne({
@@ -228,12 +186,7 @@ export class AuthService {
   async findByRefreshToken(
     refreshToken: string,
   ): Promise<Result<User, string>> {
-    const repoResult = this.getUserRepository();
-    if (repoResult.isErr()) {
-      return err(repoResult.error);
-    }
-
-    const repository = repoResult.value;
+    const repository = this.getUserRepository();
 
     try {
       const user = await repository.findOne({

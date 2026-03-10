@@ -13,18 +13,18 @@ export enum AuthProvider {
   GUEST = "guest",
 }
 
-@Entity("users")
+@Entity("User")
 export class User {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column()
+  @Column({ type: "varchar" })
   username: string;
 
-  @Column({ unique: true })
+  @Column({ type: "varchar", unique: true })
   email: string;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   password: string | null;
 
   @Column({
@@ -34,16 +34,16 @@ export class User {
   })
   authProvider: AuthProvider;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   googleId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   githubId: string | null;
 
-  @Column({ default: false })
+  @Column({ type: "boolean", default: false })
   isGuest: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", nullable: true })
   refreshToken: string | null;
 
   @Column({ type: "timestamp", nullable: true })
