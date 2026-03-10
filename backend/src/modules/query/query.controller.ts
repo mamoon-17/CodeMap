@@ -1,23 +1,26 @@
 import { Request, Response, NextFunction } from "express";
 import { queryService } from "./query.service";
-import { QueryRequestDto } from "./types";
+import { AgenticQueryRequest } from "./types";
 import { QueryValidator } from "./utils";
 import { ERROR_MESSAGES } from "./constants";
 
 class QueryController {
   /**
    * POST /query
-   * Body: { "query": "Where is authentication handled?", "top_k": 5 }
+   * Agentic endpoint - LLM decides whether to search the codebase
+   * 
+   * Body: { "query": "How does authentication work?", "top_k": 5 }
    *
    * Response:
    * {
    *   "query": "...",
    *   "answer": "...",
-   *   "sources": [...]
+   *   "tool_used": true|false,
+   *   "sources": [...] (only if tool was used)
    * }
    */
-  query = async (req: Request, res: Response, next: NextFunction) => {
-    const { query, top_k } = req.body as QueryRequestDto;
+  agenticQuery = async (req: Request, res: Response, next: NextFunction) => {
+    const { query, top_k } = req.body as AgenticQueryRequest;
 
     // Validate request
     const validationResult = QueryValidator.validateQueryRequest(query, top_k);
@@ -27,13 +30,21 @@ class QueryController {
 
     const { query: validatedQuery, topK } = validationResult.value;
 
-    // Execute query
-    const result = await queryService.query(validatedQuery, topK);
+    // Execute agentic query
+    const result = await queryService.agenticQuery(validatedQuery, topK);
 
     return result.match(
       (queryResult) => res.status(200).json(queryResult),
       (error) => {
-        // Distinguish between embedding service errors and internal errors
+        // Rate limit errors
+        if (error.startsWith("RATE_LIMIT:")) {
+          const cleanError = error.replace("RATE_LIMIT: ", "");
+          return res.status(429).json({
+            error: "Rate limit exceeded. Please wait and try again.",
+            details: cleanError,
+          });
+        }
+        // Embedding service errors
         if (error.includes("Embedding service error")) {
           return res.status(502).json({
             error: ERROR_MESSAGES.EMBEDDING_SERVICE_UNAVAILABLE,

@@ -1,17 +1,3 @@
-export interface QueryRequestDto {
-  query: string;
-  top_k?: number;
-}
+// This file is kept for backward compatibility
+// All types have been moved to tool.types.ts for the agentic approach
 
-export interface SourceDto {
-  file: string;
-  chunk_index: number;
-  score: number;
-  text: string;
-}
-
-export interface QueryResult {
-  query: string;
-  answer: string;
-  sources: SourceDto[];
-}

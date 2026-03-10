@@ -1,2 +1,2 @@
 export * from "./chunk.types";
-export * from "./query.types";
+export * from "./tool.types";

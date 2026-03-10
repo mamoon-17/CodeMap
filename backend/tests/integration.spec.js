@@ -1,17 +1,17 @@
 /**
  * End-to-End Integration Tests for CodeMap
  * 
- * Tests the complete RAG pipeline:
+ * Tests the complete Agentic RAG pipeline:
  * - Mock embedding service
- * - Backend query endpoint
- * - LLM integration
+ * - Backend query endpoint (agentic - LLM decides when to search)
+ * - LLM integration with function calling
  * - Request validation
  * 
  * Prerequisites:
  * 1. Mock service running: cd mock-service && python app.py
  * 2. Backend running: cd backend && npm run dev
  * 
- * Run: node tests/integration.spec.js
+ * Run: node tests/integration.spec.js or npm test
  */
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
@@ -84,7 +84,37 @@ async function runAllTests() {
   console.log(`${colors.cyan}🧪 CodeMap End-to-End Integration Test Suite${colors.reset}\n`);
   console.log('Configuration:');
   console.log(`  Backend URL:          ${BACKEND_URL}`);
-  console.log(`  Embedding Service:    ${EMBEDDING_URL}`);
+  console.log(`  Embedding Service:    ${EMBEDDING_URL}\n`);
+
+  // Pre-flight check: Verify services are running
+  console.log(`${colors.blue}🔍 Checking services...${colors.reset}\n`);
+  
+  try {
+    const mockCheck = await fetch(`${EMBEDDING_URL}/health`);
+    if (mockCheck.ok) {
+      logTest('✅', 'pass', 'Mock service is accessible', `${EMBEDDING_URL}`);
+    }
+  } catch (error) {
+    logTest('❌', 'fail', 'Mock service NOT running', 'Start: cd mock-service && python app.py');
+    console.log(`\n${colors.red}❌ Services not ready. Start them first:${colors.reset}`);
+    console.log(`   cd backend && .\\start-dev.bat\n`);
+    process.exit(1);
+  }
+
+  try {
+    const backendCheck = await fetch(`${BACKEND_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'test' })
+    });
+    // Any response (even 400) means backend is running
+    logTest('✅', 'pass', 'Backend is accessible', `${BACKEND_URL}`);
+  } catch (error) {
+    logTest('❌', 'fail', 'Backend NOT running', 'Start: cd backend && npm run dev');
+    console.log(`\n${colors.red}❌ Services not ready. Start them first:${colors.reset}`);
+    console.log(`   cd backend && .\\start-dev.bat\n`);
+    process.exit(1);
+  }
 
   // Test 1: Embedding service health
   logSection('Mock Embedding Service');
@@ -117,9 +147,9 @@ async function runAllTests() {
       `Received ${data.results.length} chunks, first: ${data.results[0].metadata.file}`);
   });
 
-  // Test 3: Backend query endpoint (full RAG pipeline)
-  logSection('Backend RAG Pipeline');
-  await suite.run('Backend query endpoint (full RAG)', async () => {
+  // Test 3: Backend query endpoint (agentic RAG pipeline)
+  logSection('Backend Agentic RAG Pipeline');
+  await suite.run('Backend query endpoint (agentic, tool should be used)', async () => {
     const response = await fetch(`${BACKEND_URL}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -137,12 +167,13 @@ async function runAllTests() {
     const data = await response.json();
     
     if (!data.answer) throw new Error('No answer generated');
+    if (data.tool_used !== true) throw new Error('Tool should be used for code-specific questions');
     if (!data.sources || data.sources.length === 0) {
-      throw new Error('No sources returned');
+      throw new Error('No sources returned when tool is used');
     }
 
-    logTest('✅', 'pass', 'RAG pipeline successful', 
-      `Answer: ${data.answer.substring(0, 100)}...\nSources: ${data.sources.length} chunks`);
+    logTest('✅', 'pass', 'Agentic RAG pipeline successful', 
+      `Answer: ${data.answer.substring(0, 80)}...\nTool used: ${data.tool_used}, Sources: ${data.sources.length} chunks`);
   });
 
   // Test 4: Request validation - empty query
