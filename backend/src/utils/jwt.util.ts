@@ -25,7 +25,10 @@ export class JwtUtil {
   generateRefreshToken(payload: JwtPayload): Result<string, string> {
     try {
       const secret = config.getJwtRefreshSecret();
-      const token = jwt.sign(payload, secret, {
+      // Include a small nonce to ensure a newly generated refresh token
+      // is different even if called within the same second.
+      const refreshPayload = { ...payload, nonce: Date.now().toString() };
+      const token = jwt.sign(refreshPayload, secret, {
         expiresIn: "7d",
       });
       return ok(token);

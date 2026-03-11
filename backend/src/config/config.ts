@@ -8,10 +8,6 @@ export class Config {
   private PORT?: number;
   private JWT_ACCESS_SECRET?: string;
   private JWT_REFRESH_SECRET?: string;
-  private GOOGLE_CLIENT_ID?: string;
-  private GOOGLE_CLIENT_SECRET?: string;
-  private GITHUB_CLIENT_ID?: string;
-  private GITHUB_CLIENT_SECRET?: string;
   private initialized = false;
 
   constructor() {
@@ -20,10 +16,6 @@ export class Config {
     this.PORT = port ? parseInt(port, 10) : undefined;
     this.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
     this.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-    this.GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-    this.GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-    this.GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-    this.GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
   }
 
   init(): Result<string, string[]> {
@@ -66,33 +58,6 @@ export class Config {
     return this.JWT_REFRESH_SECRET;
   }
 
-  getGoogleClientId(): string {
-    if (!this.GOOGLE_CLIENT_ID) {
-      throw new Error("GOOGLE_CLIENT_ID is not configured");
-    }
-    return this.GOOGLE_CLIENT_ID;
-  }
-
-  getGoogleClientSecret(): string {
-    if (!this.GOOGLE_CLIENT_SECRET) {
-      throw new Error("GOOGLE_CLIENT_SECRET is not configured");
-    }
-    return this.GOOGLE_CLIENT_SECRET;
-  }
-
-  getGithubClientId(): string {
-    if (!this.GITHUB_CLIENT_ID) {
-      throw new Error("GITHUB_CLIENT_ID is not configured");
-    }
-    return this.GITHUB_CLIENT_ID;
-  }
-
-  getGithubClientSecret(): string {
-    if (!this.GITHUB_CLIENT_SECRET) {
-      throw new Error("GITHUB_CLIENT_SECRET is not configured");
-    }
-    return this.GITHUB_CLIENT_SECRET;
-  }
 }
 
 export const config = new Config();

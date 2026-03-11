@@ -10,6 +10,6 @@ export const AppDataSource = new DataSource({
   },
   entities: [User],
   synchronize: true,
-  dropSchema: true, // TEMPORARY: Will drop and recreate schema on startup
+  dropSchema: false,
   logging: false,
 });

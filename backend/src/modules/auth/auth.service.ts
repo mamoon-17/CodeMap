@@ -4,7 +4,6 @@ import { AppDataSource } from "../../config/datasource";
 import { ok, err, Result } from "neverthrow";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
-import { OAuthDto } from "./dto/oauth.dto";
 
 export class AuthService {
   private getUserRepository(): Repository<User> {
@@ -69,61 +68,6 @@ export class AuthService {
     }
   }
 
-  async findOrCreateOAuthUser(dto: OAuthDto): Promise<Result<User, string>> {
-    const repository = this.getUserRepository();
-
-    try {
-      // Check by provider ID first
-      const providerIdField =
-        dto.provider === "google" ? "googleId" : "githubId";
-      let user = await repository.findOne({
-        where: { [providerIdField]: dto.providerId },
-      });
-
-      if (user) {
-        // Update last login
-        user.lastLogin = new Date();
-        await repository.save(user);
-        return ok(user);
-      }
-
-      // Check by email
-      user = await repository.findOne({
-        where: { email: dto.email },
-      });
-
-      if (user) {
-        // Link OAuth account to existing user
-        if (dto.provider === "google") {
-          user.googleId = dto.providerId;
-        } else {
-          user.githubId = dto.providerId;
-        }
-        user.lastLogin = new Date();
-        await repository.save(user);
-        return ok(user);
-      }
-
-      // Create new user
-      const newUser = repository.create({
-        username: dto.username,
-        email: dto.email,
-        password: null,
-        authProvider:
-          dto.provider === "google" ? AuthProvider.GOOGLE : AuthProvider.GITHUB,
-        googleId: dto.provider === "google" ? dto.providerId : null,
-        githubId: dto.provider === "github" ? dto.providerId : null,
-        isGuest: false,
-        lastLogin: new Date(),
-      });
-
-      const savedUser = await repository.save(newUser);
-      return ok(savedUser);
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      return err(`Failed to process OAuth user: ${errorMessage}`);
-    }
-  }
 
   async createGuestUser(): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
