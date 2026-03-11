@@ -1,93 +1,61 @@
 import { Result, ok, err } from "neverthrow";
 import { AgenticQueryResult } from "./types";
-import { ERROR_MESSAGES } from "./constants";
-import { embeddingClient, llmClient } from "./clients";
+import { config } from "../../config/config";
 
 class QueryService {
+  private ragServiceUrl: string;
+
+  constructor() {
+    // Python RAG service URL (previously embedding service URL)
+    this.ragServiceUrl = config.getEmbeddingServiceUrl() || "http://localhost:5001";
+  }
+
   /**
-   * Main query method - LLM decides whether to search the codebase
+   * Main query method - Forwards to Python RAG service
+   * Python service handles: LLM logic, tool calling, and embedding retrieval
    */
   async agenticQuery(
     queryText: string,
     topK: number = 5
   ): Promise<Result<AgenticQueryResult, string>> {
-    // Step 1: First LLM call with tool definition
-    const firstCallResult = await llmClient.generateWithTools(queryText);
-    if (firstCallResult.isErr()) {
-      return err(firstCallResult.error);
-    }
-
-    const firstResponse = firstCallResult.value;
-
-    // Case 1: LLM answered directly without calling the tool
-    if (firstResponse.type === "answer") {
-      return ok({
-        query: queryText,
-        answer: firstResponse.text,
-        tool_used: false,
+    try {
+      // Forward request to Python RAG service
+      const response = await fetch(`${this.ragServiceUrl}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: queryText, top_k: topK }),
       });
-    }
 
-    // Case 2: LLM called the retrieve_code_chunks tool
-    if (firstResponse.type === "tool_call") {
-      const toolCall = firstResponse.call;
-
-      // Validate tool call
-      if (toolCall.name !== "retrieve_code_chunks") {
-        return err(`Unknown tool called: ${toolCall.name}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(
+          `Python RAG service error ${response.status}: ${errorText}`
+        );
       }
 
-      const searchQuery = toolCall.args.query as string;
-      if (!searchQuery) {
-        return err("Tool call missing 'query' argument");
-      }
+      const data = (await response.json()) as {
+        query: string;
+        answer: string;
+        tool_used: boolean;
+        sources?: Array<{
+          file: string;
+          chunk_index: number;
+          score: number;
+          text: string;
+        }>;
+      };
 
-      // Execute the retrieval
-      const chunksResult = await embeddingClient.retrieveChunks(
-        searchQuery,
-        topK
-      );
-      if (chunksResult.isErr()) {
-        return err(chunksResult.error);
-      }
-
-      const chunks = chunksResult.value;
-
-      // Handle no chunks found
-      if (!chunks || chunks.length === 0) {
-        return ok({
-          query: queryText,
-          answer: ERROR_MESSAGES.NO_RESULTS,
-          tool_used: true,
-          sources: [],
-        });
-      }
-
-      // Step 2: Second LLM call with retrieved chunks
-      const secondCallResult = await llmClient.generateWithToolResult(
-        queryText,
-        chunks
-      );
-      if (secondCallResult.isErr()) {
-        return err(secondCallResult.error);
-      }
-
-      // Step 3: Return final answer with sources
+      // Map Python response to TypeScript types
       return ok({
-        query: queryText,
-        answer: secondCallResult.value,
-        tool_used: true,
-        sources: chunks.map((c) => ({
-          file: c.metadata.file,
-          chunk_index: c.metadata.chunk_index,
-          score: c.score,
-          text: c.metadata.text,
-        })),
+        query: data.query,
+        answer: data.answer,
+        tool_used: data.tool_used,
+        sources: data.sources || undefined,
       });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to query Python RAG service: ${message}`);
     }
-
-    // Should never reach here
-    return err("Unexpected response type from LLM");
   }
 }
 

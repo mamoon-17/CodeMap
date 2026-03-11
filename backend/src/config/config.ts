@@ -6,16 +6,15 @@ dotenv.config();
 export class Config {
   private SUPABASE_URI?: string;
   private PORT?: number;
-  private GEMINI_API_KEY?: string;
-  private EMBEDDING_SERVICE_URL?: string;
+  private RAG_SERVICE_URL?: string;
   private initialized = false;
 
   constructor() {
     this.SUPABASE_URI = process.env.SUPABASE_URI;
     const port = process.env.PORT;
     this.PORT = port ? parseInt(port, 10) : undefined;
-    this.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    this.EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL || "http://localhost:5001";
+    // Python RAG service URL (replaces GEMINI_API_KEY and EMBEDDING_SERVICE_URL)
+    this.RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || process.env.EMBEDDING_SERVICE_URL || "http://localhost:5001";
   }
 
   init(): Result<string, string[]> {
@@ -23,7 +22,7 @@ export class Config {
 
     if (!this.SUPABASE_URI) missing.push("SUPABASE_URI");
     if (!this.PORT) missing.push("PORT");
-    if (!this.GEMINI_API_KEY) missing.push("GEMINI_API_KEY");
+    // Note: GEMINI_API_KEY is now only needed in Python service
 
     if (missing.length > 0) return err(missing);
 
@@ -44,11 +43,14 @@ export class Config {
   }
 
   getGeminiApiKey() {
-    return this.GEMINI_API_KEY;
+    // Kept for backward compatibility, but no longer used
+    // API key is now in Python service
+    return undefined;
   }
 
   getEmbeddingServiceUrl() {
-    return this.EMBEDDING_SERVICE_URL;
+    // Now returns Python RAG service URL
+    return this.RAG_SERVICE_URL;
   }
 }
 

@@ -5,11 +5,11 @@
  * Prerequisites:
  * 1. Mock service running on port 5001
  * 2. Backend running on port 5000
- * 3. Valid GEMINI_API_KEY in backend/.env
+ * 3. Valid OPENAI_API_KEY in Python service (mock-service/.env)
  * 
- * ⚠️  Rate Limits (Gemini Free Tier):
- * - 20 requests per day for gemini-2.5-flash
- * - If you hit the limit, wait ~1 minute or use a different API key
+ * ⚠️  Rate Limits (OpenAI):
+ * - Check your OpenAI plan limits
+ * - If you hit the limit, wait or upgrade your plan
  * 
  * Quick start: cd backend && .\start-dev.bat
  */
@@ -242,7 +242,7 @@ class AgenticTestSuite {
       // Check for rate limit errors
       if (errorMsg.includes("RATE_LIMIT") || errorMsg.includes("429") || errorMsg.includes("quota")) {
         console.log(`⏸️   ${name}`);
-        console.log(`    Rate limit hit: Gemini free tier allows 20 requests/day`);
+        console.log(`    Rate limit hit: Check your OpenAI plan limits`);
         console.log(`    Wait ~1 minute or use a different API key`);
       } else {
         console.log(`❌  ${name}`);
