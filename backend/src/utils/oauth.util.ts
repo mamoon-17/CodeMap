@@ -54,6 +54,7 @@ export class OAuthUtil {
           clientID: config.getGithubClientId(),
           clientSecret: config.getGithubClientSecret(),
           callbackURL: "/auth/github/callback",
+          scope: ['user:email'], // Request email access
         },
         async (
           _accessToken: string,
@@ -62,16 +63,20 @@ export class OAuthUtil {
           done: VerifyCallback,
         ) => {
           try {
-            const email = profile.emails?.[0]?.value;
+            // Try to get email from profile
+            let email = profile.emails?.[0]?.value;
+            
+            // If no email provided, generate one based on GitHub username
             if (!email) {
-              return done(new Error("No email provided by GitHub"), undefined);
+              email = `${profile.username || profile.id}@github.placeholder`;
+              console.warn(`GitHub user ${profile.username} has no public email, using placeholder: ${email}`);
             }
 
             const oauthDto = new OAuthDto(
               "github",
               profile.id,
               email,
-              (profile.username || email.split("@")[0]) as string,
+              (profile.username || profile.displayName || email.split("@")[0]) as string,
             );
 
             const result = await authService.findOrCreateOAuthUser(oauthDto);
