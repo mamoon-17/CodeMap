@@ -2,7 +2,7 @@ import AdmZip from "adm-zip";
 import fs from "fs";
 import path from "path";
 import { Result, err, ok } from "neverthrow";
-import { appDataSource } from "../../config/datasource";
+import { AppDataSource } from "../../config/datasource";
 import { Project, ProjectStatus } from "./project.entity";
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -41,21 +41,23 @@ function walkDir(dir: string): string[] {
 }
 
 class ProjectService {
-  private getRepo() {
-    const dsResult = appDataSource.getInstance();
-    if (dsResult.isErr()) return err(dsResult.error);
-    return ok(dsResult.value.getRepository(Project));
+  async listAll(): Promise<Result<Project[], string>> {
+    try {
+      const repo = AppDataSource.getRepository(Project);
+      const projects = await repo.find({ order: { createdAt: "DESC" } });
+      return ok(projects);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(message);
+    }
   }
 
   async createFromUpload(
     name: string,
     zipPath: string,
   ): Promise<Result<{ project: Project; files: string[] }, string>> {
-    const repoResult = this.getRepo();
-    if (repoResult.isErr()) return err(repoResult.error);
-    const repo = repoResult.value;
-
     try {
+      const repo = AppDataSource.getRepository(Project);
       const project = repo.create({ name, status: ProjectStatus.INDEXING });
       const saved = await repo.save(project);
 
@@ -66,6 +68,7 @@ class ProjectService {
       const files = walkDir(extractPath);
 
       saved.status = ProjectStatus.READY;
+      saved.fileCount = files.length;
       await repo.save(saved);
 
       return ok({ project: saved, files });

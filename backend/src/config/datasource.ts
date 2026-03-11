@@ -1,5 +1,6 @@
 import { DataSource } from "typeorm";
 import { User } from "../modules/user/user.entity";
+import { Project } from "../modules/project/project.entity";
 import { config } from "./config";
 
 export const AppDataSource = new DataSource({
@@ -8,7 +9,7 @@ export const AppDataSource = new DataSource({
   ssl: {
     rejectUnauthorized: false,
   },
-  entities: [User],
+  entities: [User, Project],
   synchronize: true,
   dropSchema: false,
   logging: false,
