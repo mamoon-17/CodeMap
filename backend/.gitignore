@@ -3,6 +3,7 @@ node_modules/
 dist/
 build/
 uploads/
+coverage/
 *.log
 .DS_Store
 .vscode/
