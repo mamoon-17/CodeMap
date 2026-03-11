@@ -6,8 +6,8 @@ class UserController {
     const result = await userService.createUser(req.body);
 
     result.match(
-      (user) => res.status(201).json(user),
-      (error) => next(new Error(error)),
+      (user: unknown) => res.status(201).json(user),
+      (error: unknown) => next(new Error(String(error))),
     );
   };
 }

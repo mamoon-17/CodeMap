@@ -13,4 +13,3 @@ export const AppDataSource = new DataSource({
   dropSchema: true, // TEMPORARY: Will drop and recreate schema on startup
   logging: false,
 });
-

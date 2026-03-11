@@ -1,7 +1,8 @@
 import "./App.css";
+import UploadRepo from "./components/UploadRepo";
 
 function App() {
-  return <></>;
+  return <UploadRepo />;
 }
 
 export default App;
