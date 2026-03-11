@@ -1,18 +1,14 @@
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
-import passport from "passport";
 import userRoutes from "./modules/user/user.routes";
 import authRoutes from "./modules/auth/auth.routes";
-import { oauthUtil } from "./utils/oauth.util";
 
 const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
 
-// Initialize Passport
-oauthUtil.initialize();
-app.use(passport.initialize());
+// JWT-only authentication; passport/OAuth removed
 
 // Routes
 app.use("/users", userRoutes);

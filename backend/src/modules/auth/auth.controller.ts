@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import passport from "passport";
 import { authService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -225,100 +224,6 @@ export class AuthController {
         });
       },
     );
-  }
-
-  googleAuth(req: Request, res: Response): void {
-    passport.authenticate("google", {
-      scope: ["profile", "email"],
-    })(req, res);
-  }
-
-  async googleCallback(req: Request, res: Response): Promise<void> {
-    passport.authenticate("google", { session: false }, async (err: any, user: any) => {
-      if (err || !user) {
-        res.status(401).json({
-          success: false,
-          error: err?.message || "Google authentication failed",
-        });
-        return;
-      }
-
-      // Generate JWT tokens
-      const tokensResult = this.generateTokensForUser(user);
-
-      if (!tokensResult.success) {
-        res.status(500).json({
-          success: false,
-          error: tokensResult.error,
-        });
-        return;
-      }
-
-      // Save refresh token to database
-      await authService.updateRefreshToken(user.id, tokensResult.refreshToken!);
-
-      res.status(200).json({
-        success: true,
-        message: "Google authentication successful",
-        data: {
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            authProvider: user.authProvider,
-          },
-          accessToken: tokensResult.accessToken,
-          refreshToken: tokensResult.refreshToken,
-        },
-      });
-    })(req, res);
-  }
-
-  githubAuth(req: Request, res: Response): void {
-    passport.authenticate("github", {
-      scope: ["user:email"],
-    })(req, res);
-  }
-
-  async githubCallback(req: Request, res: Response): Promise<void> {
-    passport.authenticate("github", { session: false }, async (err: any, user: any) => {
-      if (err || !user) {
-        res.status(401).json({
-          success: false,
-          error: err?.message || "GitHub authentication failed",
-        });
-        return;
-      }
-
-      // Generate JWT tokens
-      const tokensResult = this.generateTokensForUser(user);
-
-      if (!tokensResult.success) {
-        res.status(500).json({
-          success: false,
-          error: tokensResult.error,
-        });
-        return;
-      }
-
-      // Save refresh token to database
-      await authService.updateRefreshToken(user.id, tokensResult.refreshToken!);
-
-      res.status(200).json({
-        success: true,
-        message: "GitHub authentication successful",
-        data: {
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            authProvider: user.authProvider,
-          },
-          accessToken: tokensResult.accessToken,
-          refreshToken: tokensResult.refreshToken,
-        },
-      });
-    })(req, res);
   }
 
   async guestLogin(_req: Request, res: Response): Promise<void> {
