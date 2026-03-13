@@ -1,4 +1,5 @@
 import { DataSource } from "typeorm";
+import { Chunk } from "../modules/chunk/chunk.entity";
 import { User } from "../modules/user/user.entity";
 import { config } from "./config";
 
@@ -8,7 +9,7 @@ export const AppDataSource = new DataSource({
   ssl: {
     rejectUnauthorized: false,
   },
-  entities: [User],
+  entities: [User, Chunk],
   synchronize: true,
   dropSchema: false,
   logging: false,

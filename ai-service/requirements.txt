@@ -3,3 +3,5 @@ uvicorn
 chromadb
 sentence-transformers
 python-dotenv
+psycopg2-binary
+sqlalchemy
