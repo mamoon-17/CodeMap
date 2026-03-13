@@ -24,7 +24,7 @@ def embed_and_store(chunk_ids, project_id):
             embedding = model.encode(chunk.rawText).tolist()
 
             collection.add(
-                ids=[chunk.id],
+                ids=[str(chunk.id)],
                 embeddings=[embedding],
                 documents=[chunk.rawText],
                 metadatas=[{
@@ -35,7 +35,7 @@ def embed_and_store(chunk_ids, project_id):
                 }]
             )
 
-            chunk.vectorId = chunk.id
+            chunk.vectorId = str(chunk.id)
             session.add(chunk)
 
         session.commit()
