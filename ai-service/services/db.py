@@ -26,4 +26,3 @@ def store_chunks(chunks, project_id):
         
         session.commit()
         return chunk_ids
-    
