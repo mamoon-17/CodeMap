@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# ChromaDB local storage
+chroma_db/
+
+# Virtual environment (if you create one)
+venv/
+env/
+
+# Model cache (sentence-transformers downloads models here, large files)
+.cache/
