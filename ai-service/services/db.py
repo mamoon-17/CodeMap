@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from services.models import Chunk
+from models.db_models import Chunk
 import os
 
 load_dotenv()
