@@ -1,0 +1,11 @@
+### User module requests
+
+### Create user
+POST http://localhost:5000/users
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "email": "newuser@example.com",
+  "password": "SecurePass123!"
+}

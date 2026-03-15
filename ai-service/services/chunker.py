@@ -1,6 +1,5 @@
-def chunk_file(file_path, chunk_size=100, overlap=20):
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
+def chunk_file(file_path, content, chunk_size=100, overlap=20):
+    lines = content.splitlines(keepends=True)
 
     chunks = []
     start = 0
@@ -9,7 +8,7 @@ def chunk_file(file_path, chunk_size=100, overlap=20):
         end = min(start + chunk_size, len(lines))
         chunk_text = "".join(lines[start:end])
 
-        if chunk_text.strip():  # ignore empty chunks
+        if chunk_text.strip():
             chunks.append({
                 "text": chunk_text,
                 "file_path": file_path,

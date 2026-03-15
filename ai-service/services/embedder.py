@@ -1,8 +1,6 @@
 from sentence_transformers import SentenceTransformer
 import chromadb
-from sqlalchemy.orm import Session
-from services.db import engine
-from models.db_models import Chunk
+from services.chunker import chunk_file
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
@@ -12,31 +10,28 @@ def get_or_create_collection(project_id):
         name=f"project_{project_id}"
     )
 
-def embed_and_store(chunk_ids, project_id):
-    with Session(engine) as session:
-        chunks = session.query(Chunk).filter(
-            Chunk.id.in_(chunk_ids)
-        ).all()
+def ingest_and_embed(files, project_id):
+    collection = get_or_create_collection(project_id)
+    total_chunks = 0
 
-        collection = get_or_create_collection(project_id)
+    for file in files:
+        chunks = chunk_file(file.file_path, file.content)
 
         for chunk in chunks:
-            embedding = model.encode(chunk.rawText).tolist()
+            embedding = model.encode(chunk["text"]).tolist()
+            chunk_id = f"{project_id}_{chunk['file_path']}_{chunk['start_line']}"
 
             collection.add(
-                ids=[str(chunk.id)],
+                ids=[chunk_id],
                 embeddings=[embedding],
-                documents=[chunk.rawText],
+                documents=[chunk["text"]],
                 metadatas=[{
-                    "file_path": chunk.filePath,
-                    "start_line": chunk.startLine,
-                    "end_line": chunk.endLine,
+                    "file_path": chunk["file_path"],
+                    "start_line": chunk["start_line"],
+                    "end_line": chunk["end_line"],
                     "project_id": project_id
                 }]
             )
+            total_chunks += 1
 
-            chunk.vectorId = str(chunk.id)
-            session.add(chunk)
-
-        session.commit()
-        return {"embedded": len(chunks)}
+    return {"indexed": total_chunks}

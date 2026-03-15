@@ -6,9 +6,7 @@ import { config } from "./config";
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.SUPABASE_URI || config.getSupabaseUri(),
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: false,
   entities: [User, Chunk],
   synchronize: true,
   dropSchema: false,

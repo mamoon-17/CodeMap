@@ -1,9 +1,9 @@
 from fastapi import FastAPI
-from routers import embed
+from routers import ingest
 
 app = FastAPI()
 
-app.include_router(embed.router)
+app.include_router(ingest.router)
 
 @app.get("/health")
 def health():
