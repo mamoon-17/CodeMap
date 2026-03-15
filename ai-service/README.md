@@ -95,6 +95,6 @@ Each project gets its own isolated collection named `project_{project_id}`.
 ## Notes
 - Embedding model (all-MiniLM-L6-v2) loads once at startup
 - ChromaDB runs embedded inside this service, no separate server needed
-- db.py and db_models.py are kept for future PostgreSQL integration
+- db_models.py are kept for future PostgreSQL integration if needed
 - In production, file contents would be served from S3 instead of 
   being sent directly over HTTP
