@@ -8,7 +8,7 @@ class QueryController {
   /**
    * POST /query
    * Agentic endpoint - LLM decides whether to search the codebase
-   * 
+   *
    * Body: { "query": "How does authentication work?", "top_k": 5 }
    *
    * Response:
@@ -20,18 +20,26 @@ class QueryController {
    * }
    */
   agenticQuery = async (req: Request, res: Response, next: NextFunction) => {
-    const { query, top_k } = req.body as AgenticQueryRequest;
+    const { project_id, query, top_k } = req.body as AgenticQueryRequest;
 
     // Validate request
-    const validationResult = QueryValidator.validateQueryRequest(query, top_k);
+    const validationResult = QueryValidator.validateQueryRequest(
+      project_id,
+      query,
+      top_k,
+    );
     if (validationResult.isErr()) {
       return res.status(400).json({ error: validationResult.error });
     }
 
-    const { query: validatedQuery, topK } = validationResult.value;
+    const { projectId, query: validatedQuery, topK } = validationResult.value;
 
     // Execute agentic query
-    const result = await queryService.agenticQuery(validatedQuery, topK);
+    const result = await queryService.agenticQuery(
+      projectId,
+      validatedQuery,
+      topK,
+    );
 
     return result.match(
       (queryResult) => res.status(200).json(queryResult),
@@ -51,7 +59,7 @@ class QueryController {
           });
         }
         return next(new Error(error));
-      }
+      },
     );
   };
 }

@@ -22,7 +22,7 @@ class RagService:
         logger.info("RAG service initialized")
     
     async def agentic_query(
-        self, query_text: str, top_k: int = 5
+        self, query_text: str, top_k: int = 5, project_id: str = ""
     ) -> AgenticQueryResult:
         """
         Main query method - LLM decides whether to search the codebase
@@ -63,7 +63,9 @@ class RagService:
             
             # Execute the retrieval
             chunks = await self.embedding_service.retrieve_chunks(
-                search_query, top_k
+                search_query,
+                top_k,
+                project_id,
             )
             
             # Handle no chunks found

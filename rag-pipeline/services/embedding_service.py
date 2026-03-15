@@ -16,20 +16,32 @@ class EmbeddingService:
         """Initialize embedding service"""
         logger.info("Embedding service initialized (ChromaDB retrieval)")
     
-    async def retrieve_chunks(self, query_text: str, top_k: int) -> list[Chunk]:
+    async def retrieve_chunks(
+        self,
+        query_text: str,
+        top_k: int,
+        project_id: str,
+    ) -> list[Chunk]:
         """
         Retrieve relevant code chunks for a query
         
         Args:
             query_text: Search query
             top_k: Number of chunks to return
+            project_id: Project identifier used to scope retrieval
             
         Returns:
             List of relevant code chunks
         """
-        logger.info(f"Retrieving chunks for query: '{query_text}' (top_k={top_k})")
+        logger.info(
+            f"Retrieving chunks for project '{project_id}' query: '{query_text}' (top_k={top_k})"
+        )
 
-        raw_matches = retrieve_similar_chunks(query_text=query_text, top_k=top_k)
+        raw_matches = retrieve_similar_chunks(
+            query_text=query_text,
+            top_k=top_k,
+            project_id=project_id,
+        )
         chunks = []
         for raw in raw_matches:
             metadata = raw.get("metadata") or {}

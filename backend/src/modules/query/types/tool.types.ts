@@ -7,10 +7,13 @@ export interface FunctionDeclaration {
   description: string;
   parameters: {
     type: "object";
-    properties: Record<string, {
-      type: string;
-      description: string;
-    }>;
+    properties: Record<
+      string,
+      {
+        type: string;
+        description: string;
+      }
+    >;
     required: string[];
   };
 }
@@ -21,6 +24,7 @@ export interface ToolCall {
 }
 
 export interface AgenticQueryRequest {
+  project_id: string;
   query: string;
   top_k?: number;
 }

@@ -8,7 +8,11 @@ class QueryService:
 
     async def query(self, request: QueryRequest) -> QueryResponse:
         rag_service = get_rag_service()
-        result = await rag_service.agentic_query(request.query, request.top_k)
+        result = await rag_service.agentic_query(
+            request.query,
+            request.top_k,
+            request.project_id,
+        )
         return QueryResponse(
             query=result.query,
             answer=result.answer,

@@ -7,7 +7,8 @@ class QueryService {
 
   constructor() {
     // Python RAG service URL (previously embedding service URL)
-    this.ragServiceUrl = config.getEmbeddingServiceUrl() || "http://localhost:5001";
+    this.ragServiceUrl =
+      config.getEmbeddingServiceUrl() || "http://localhost:5001";
   }
 
   /**
@@ -15,22 +16,25 @@ class QueryService {
    * Python service handles: LLM logic, tool calling, and embedding retrieval
    */
   async agenticQuery(
+    projectId: string,
     queryText: string,
-    topK: number = 5
+    topK: number = 5,
   ): Promise<Result<AgenticQueryResult, string>> {
     try {
       // Forward request to Python RAG service
       const response = await fetch(`${this.ragServiceUrl}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: queryText, top_k: topK }),
+        body: JSON.stringify({
+          project_id: projectId,
+          query: queryText,
+          top_k: topK,
+        }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        return err(
-          `Python RAG service error ${response.status}: ${errorText}`
-        );
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
       }
 
       const data = (await response.json()) as {

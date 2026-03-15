@@ -24,19 +24,10 @@ const initializeDataSource = async () => {
   }
 };
 
-initializeDataSource().then((result) => {
-  result.match(
-    () => {
-      console.log("Database connected successfully");
-      const PORT = config.getPort();
-      app.listen(PORT, () => {
-        console.log(`Server active at: http://localhost:${PORT}`);
-      });
-    },
-    (error) => {
-      console.error("Database connection failed:", error);
-      console.error("Server shutting down due to database error");
-      process.exit(1);
-    },
-  );
+initializeDataSource().then(() => {
+  console.log("Database connected successfully");
+  const PORT = config.getPort();
+  app.listen(PORT, () => {
+    console.log(`Server active at: http://localhost:${PORT}`);
+  });
 });

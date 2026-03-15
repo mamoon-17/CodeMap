@@ -14,6 +14,7 @@ class QueryRequest(BaseModel):
         le=QUERY_CONSTRAINTS["MAX_TOP_K"],
         description="Number of code chunks to retrieve",
     )
+    project_id: str = Field(..., min_length=1, description="Project identifier for scoped retrieval")
     
     @field_validator("query")
     @classmethod
@@ -21,6 +22,14 @@ class QueryRequest(BaseModel):
         """Validate query is not empty after stripping"""
         if not v.strip():
             raise ValueError(ERROR_MESSAGES["QUERY_REQUIRED"])
+        return v.strip()
+
+    @field_validator("project_id")
+    @classmethod
+    def validate_project_id(cls, v: str) -> str:
+        """Validate project identifier is not empty after stripping"""
+        if not v.strip():
+            raise ValueError("project_id is required")
         return v.strip()
 
 
@@ -63,6 +72,7 @@ class IngestInput(BaseModel):
     """Request model for repository ingestion"""
     project_id: str
     files: list[FileInput]
+    replace_project: bool = False
 
 
 class IngestResponse(BaseModel):

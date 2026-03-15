@@ -29,13 +29,32 @@ def get_or_create_collection(project_id: str):
     return _get_chroma_client().get_or_create_collection(name=f"project_{project_id}")
 
 
-def ingest_and_embed(files: Iterable[Any], project_id: str) -> dict[str, int]:
+def _reset_project_collection(project_id: str):
+    client = _get_chroma_client()
+    collection_name = f"project_{project_id}"
+    try:
+        client.delete_collection(name=collection_name)
+    except Exception:
+        pass
+
+
+def ingest_and_embed(
+    files: Iterable[Any],
+    project_id: str,
+    replace_project: bool = False,
+) -> dict[str, int]:
     """Chunk files, embed, and persist vectors in ChromaDB."""
+    if replace_project:
+        _reset_project_collection(project_id)
+
     collection = get_or_create_collection(project_id)
     model = _get_model()
     total_chunks = 0
 
     for file in files:
+        if not replace_project:
+            collection.delete(where={"file_path": file.file_path})
+
         chunks = chunk_file(file.file_path, file.content)
 
         for chunk in chunks:
@@ -105,6 +124,13 @@ def retrieve_similar_chunks(
                     "text": document,
                 }
             )
+
+    if project_id:
+        matches = [
+            match
+            for match in matches
+            if (match.get("metadata") or {}).get("project_id") == project_id
+        ]
 
     matches.sort(key=lambda item: item["score"], reverse=True)
     return matches[:top_k]

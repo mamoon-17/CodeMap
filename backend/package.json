@@ -6,6 +6,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "node tests/integration.spec.js",
+    "test:ingest-query": "node tests/ingest-query.integration.spec.js",
     "test:agentic": "node tests/agentic.spec.js",
     "test:all": "node tests/integration.spec.js && node tests/agentic.spec.js"
   },

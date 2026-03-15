@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -15,7 +15,7 @@ import {
   PanelRightOpen,
   Loader2,
 } from "lucide-react";
-import { queryCodebase } from "@/services/api";
+import { ingestCodebase, queryCodebase } from "@/services/api";
 import type { Source } from "@/types/api";
 
 interface Message {
@@ -23,7 +23,12 @@ interface Message {
   role: "user" | "ai";
   content: string;
   tool_used?: boolean;
-  references?: { file: string; lines: string; snippet: string; score?: number }[];
+  references?: {
+    file: string;
+    lines: string;
+    snippet: string;
+    score?: number;
+  }[];
 }
 
 interface TreeNode {
@@ -100,15 +105,24 @@ const FileTreeItem = ({
           </>
         ) : (
           <>
-            <ChevronRight size={13} className="shrink-0 text-muted-foreground" />
+            <ChevronRight
+              size={13}
+              className="shrink-0 text-muted-foreground"
+            />
             <Folder size={13} className="shrink-0 text-primary/70" />
           </>
         )}
         <span className="truncate">{node.name}</span>
       </button>
-      {open && node.children?.map((child) => (
-        <FileTreeItem key={child.name} node={child} depth={depth + 1} onSelect={onSelect} />
-      ))}
+      {open &&
+        node.children?.map((child) => (
+          <FileTreeItem
+            key={child.name}
+            node={child}
+            depth={depth + 1}
+            onSelect={onSelect}
+          />
+        ))}
     </div>
   );
 };
@@ -116,7 +130,12 @@ const FileTreeItem = ({
 const Query = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [selectedRef, setSelectedRef] = useState<{ file: string; lines: string; snippet: string; score?: number } | null>(null);
+  const [selectedRef, setSelectedRef] = useState<{
+    file: string;
+    lines: string;
+    snippet: string;
+    score?: number;
+  } | null>(null);
   const [showCodePanel, setShowCodePanel] = useState(false);
   const [showFileTree, setShowFileTree] = useState(true);
   const [fileTreeWidth, setFileTreeWidth] = useState(224);
@@ -124,60 +143,89 @@ const Query = () => {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [projectId, setProjectId] = useState("manual-project");
+  const [queryProjectId, setQueryProjectId] = useState("manual-project");
+  const [filePath, setFilePath] = useState("src/manual_test.py");
+  const [fileContent, setFileContent] = useState(
+    [
+      "def manual_test_helper():",
+      '    """Manual ingest test helper."""',
+      '    return "manual-ingest-marker"',
+    ].join("\n"),
+  );
+  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+  const [isIngesting, setIsIngesting] = useState(false);
 
-  const handleMouseMoveLeft = (e: MouseEvent) => {
-    if (isResizingLeft) {
-      const newWidth = Math.max(180, Math.min(500, e.clientX));
-      setFileTreeWidth(newWidth);
-    }
-  };
+  const handleMouseMoveLeft = useCallback(
+    (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(180, Math.min(500, e.clientX));
+        setFileTreeWidth(newWidth);
+      }
+    },
+    [isResizingLeft],
+  );
 
-  const handleMouseMoveRight = (e: MouseEvent) => {
-    if (isResizingRight) {
-      const newWidth = Math.max(300, Math.min(800, window.innerWidth - e.clientX));
-      setCodePanelWidth(newWidth);
-    }
-  };
+  const handleMouseMoveRight = useCallback(
+    (e: MouseEvent) => {
+      if (isResizingRight) {
+        const newWidth = Math.max(
+          300,
+          Math.min(800, window.innerWidth - e.clientX),
+        );
+        setCodePanelWidth(newWidth);
+      }
+    },
+    [isResizingRight],
+  );
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsResizingLeft(false);
     setIsResizingRight(false);
-  };
+  }, []);
 
   useEffect(() => {
     if (isResizingLeft) {
-      document.addEventListener("mousemove", handleMouseMoveLeft as any);
+      document.addEventListener("mousemove", handleMouseMoveLeft);
       document.addEventListener("mouseup", handleMouseUp);
       return () => {
-        document.removeEventListener("mousemove", handleMouseMoveLeft as any);
+        document.removeEventListener("mousemove", handleMouseMoveLeft);
         document.removeEventListener("mouseup", handleMouseUp);
       };
     }
-  }, [isResizingLeft]);
+  }, [isResizingLeft, handleMouseMoveLeft, handleMouseUp]);
 
   useEffect(() => {
     if (isResizingRight) {
-      document.addEventListener("mousemove", handleMouseMoveRight as any);
+      document.addEventListener("mousemove", handleMouseMoveRight);
       document.addEventListener("mouseup", handleMouseUp);
       return () => {
-        document.removeEventListener("mousemove", handleMouseMoveRight as any);
+        document.removeEventListener("mousemove", handleMouseMoveRight);
         document.removeEventListener("mouseup", handleMouseUp);
       };
     }
-  }, [isResizingRight]);
+  }, [isResizingRight, handleMouseMoveRight, handleMouseUp]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    
-    const userMsg: Message = { id: String(Date.now()), role: "user", content: input };
+    if (!input.trim() || !queryProjectId.trim() || isLoading) return;
+
+    const userMsg: Message = {
+      id: String(Date.now()),
+      role: "user",
+      content: input,
+    };
     setMessages((prev) => [...prev, userMsg]);
     const queryText = input;
     setInput("");
     setIsLoading(true);
 
     try {
-      const response = await queryCodebase({ query: queryText, top_k: 5 });
-      
+      const response = await queryCodebase({
+        project_id: queryProjectId.trim(),
+        query: queryText,
+        top_k: 5,
+      });
+
       // Map backend sources to UI references format
       const references = response.sources?.map((source: Source) => ({
         file: source.file,
@@ -205,11 +253,42 @@ const Query = () => {
       const errorMsg: Message = {
         id: String(Date.now() + 1),
         role: "ai",
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response from backend'}`,
+        content: `Error: ${error instanceof Error ? error.message : "Failed to get response from backend"}`,
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleIngest = async () => {
+    if (!fileContent.trim() || !filePath.trim() || isIngesting) return;
+
+    setIngestStatus(null);
+    setIsIngesting(true);
+
+    try {
+      const response = await ingestCodebase({
+        project_id: projectId.trim() || "manual-project",
+        replace_project: true,
+        files: [
+          {
+            file_path: filePath.trim(),
+            content: fileContent,
+          },
+        ],
+      });
+
+      setIngestStatus(
+        `Ingested successfully. Indexed chunks: ${response.indexed}`,
+      );
+      setQueryProjectId(projectId.trim() || "manual-project");
+    } catch (error) {
+      setIngestStatus(
+        `Ingest failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      setIsIngesting(false);
     }
   };
 
@@ -221,12 +300,18 @@ const Query = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-                <span className="text-xs font-bold text-primary-foreground font-mono">&lt;/&gt;</span>
+                <span className="text-xs font-bold text-primary-foreground font-mono">
+                  &lt;/&gt;
+                </span>
               </div>
-              <span className="text-lg font-semibold tracking-tight text-foreground">CodeMap</span>
+              <span className="text-lg font-semibold tracking-tight text-foreground">
+                CodeMap
+              </span>
             </div>
             <span className="text-muted-foreground/40">/</span>
-            <span className="text-sm font-medium text-foreground font-mono">Query Interface</span>
+            <span className="text-sm font-medium text-foreground font-mono">
+              Query Interface
+            </span>
           </div>
         </div>
       </nav>
@@ -235,10 +320,15 @@ const Query = () => {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: File Tree */}
         {showFileTree && (
-          <aside className="shrink-0 border-r bg-card overflow-y-auto relative" style={{ width: `${fileTreeWidth}px` }}>
+          <aside
+            className="shrink-0 border-r bg-card overflow-y-auto relative"
+            style={{ width: `${fileTreeWidth}px` }}
+          >
             <div className="p-3 border-b">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Files</span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Files
+                </span>
                 <div className="flex items-center gap-1">
                   <button
                     className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
@@ -256,7 +346,10 @@ const Query = () => {
                 </div>
               </div>
               <div className="relative">
-                <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search
+                  size={13}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
                 <input
                   type="text"
                   placeholder="Filter files…"
@@ -281,6 +374,54 @@ const Query = () => {
         <main className="flex flex-1 flex-col overflow-hidden">
           {/* Search / Input */}
           <div className="border-b p-4">
+            <div className="mb-4 rounded-md border bg-card p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Manual Ingest (RAG)
+                </span>
+                <button
+                  onClick={handleIngest}
+                  disabled={
+                    isIngesting || !filePath.trim() || !fileContent.trim()
+                  }
+                  className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isIngesting ? "Ingesting..." : "Ingest File"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <input
+                  type="text"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  placeholder="Project ID"
+                  className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <input
+                  type="text"
+                  value={filePath}
+                  onChange={(e) => setFilePath(e.target.value)}
+                  placeholder="File path (e.g. src/foo.py)"
+                  className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+
+              <textarea
+                value={fileContent}
+                onChange={(e) => setFileContent(e.target.value)}
+                rows={6}
+                placeholder="Paste full file content here"
+                className="mt-2 w-full rounded border bg-background px-2 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+
+              {ingestStatus && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {ingestStatus}
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center gap-2">
               {!showFileTree && (
                 <button
@@ -291,23 +432,43 @@ const Query = () => {
                   <PanelLeftOpen size={16} />
                 </button>
               )}
+              <input
+                type="text"
+                value={queryProjectId}
+                onChange={(e) => setQueryProjectId(e.target.value)}
+                placeholder="Query Project ID"
+                className="w-44 rounded-md border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
               <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  placeholder="Ask about your codebase..."
+                  placeholder={
+                    queryProjectId.trim()
+                      ? `Ask about project ${queryProjectId.trim()}...`
+                      : "Set Query Project ID, then ask about your codebase..."
+                  }
                   disabled={isLoading}
                   className="w-full rounded-md border bg-card py-2.5 pl-10 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={isLoading || !input.trim()}
+                  disabled={
+                    isLoading || !input.trim() || !queryProjectId.trim()
+                  }
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-primary p-1.5 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {isLoading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Send size={14} />
+                  )}
                 </button>
               </div>
               {!showCodePanel && selectedRef && (
@@ -337,11 +498,15 @@ const Query = () => {
                     {msg.role === "user" ? "U" : "AI"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                      {msg.content}
+                    </p>
 
                     {msg.tool_used !== undefined && (
                       <div className="mt-2 text-xs text-muted-foreground">
-                        {msg.tool_used ? "🔍 Retrieved from codebase" : "💡 Answered from knowledge"}
+                        {msg.tool_used
+                          ? "🔍 Retrieved from codebase"
+                          : "💡 Answered from knowledge"}
                       </div>
                     )}
 
@@ -360,8 +525,13 @@ const Query = () => {
                             className="flex w-full items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-secondary group"
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <File size={13} className="text-primary/70 shrink-0" />
-                              <span className="text-xs font-mono text-foreground truncate">{ref.file}</span>
+                              <File
+                                size={13}
+                                className="text-primary/70 shrink-0"
+                              />
+                              <span className="text-xs font-mono text-foreground truncate">
+                                {ref.file}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               {ref.score && (
@@ -386,7 +556,10 @@ const Query = () => {
 
         {/* Right: Code Viewer */}
         {showCodePanel && selectedRef && (
-          <aside className="shrink-0 border-l bg-card overflow-hidden flex flex-col relative" style={{ width: `${codePanelWidth}px` }}>
+          <aside
+            className="shrink-0 border-l bg-card overflow-hidden flex flex-col relative"
+            style={{ width: `${codePanelWidth}px` }}
+          >
             {/* Resize handle */}
             <div
               className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors z-10"
@@ -395,8 +568,12 @@ const Query = () => {
             <div className="flex items-center justify-between border-b px-4 py-2.5">
               <div className="flex items-center gap-2 min-w-0">
                 <File size={13} className="shrink-0 text-primary/70" />
-                <span className="text-xs font-mono text-foreground truncate">{selectedRef.file}</span>
-                <span className="text-xs text-muted-foreground shrink-0">{selectedRef.lines}</span>
+                <span className="text-xs font-mono text-foreground truncate">
+                  {selectedRef.file}
+                </span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {selectedRef.lines}
+                </span>
                 {selectedRef.score && (
                   <span className="text-xs text-muted-foreground shrink-0">
                     Score: {selectedRef.score.toFixed(3)}
@@ -405,7 +582,9 @@ const Query = () => {
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => navigator.clipboard.writeText(selectedRef.snippet)}
+                  onClick={() =>
+                    navigator.clipboard.writeText(selectedRef.snippet)
+                  }
                   className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
                   title="Copy"
                 >
@@ -427,10 +606,12 @@ const Query = () => {
                     key={i}
                     className="flex hover:bg-secondary/50 -mx-4 px-4 py-px"
                   >
-                    <span className="mr-4 inline-block w-8 text-right text-muted-foreground/50 select-none flex-shrink-0">
+                    <span className="mr-4 inline-block w-8 shrink-0 select-none text-right text-muted-foreground/50">
                       {i + 1}
                     </span>
-                    <span className="flex-1 text-foreground break-words whitespace-pre-wrap">{line}</span>
+                    <span className="flex-1 text-foreground wrap-break-word whitespace-pre-wrap">
+                      {line}
+                    </span>
                   </div>
                 ))}
               </div>

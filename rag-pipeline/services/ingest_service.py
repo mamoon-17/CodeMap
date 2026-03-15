@@ -7,7 +7,11 @@ class IngestService:
     """Coordinates repository ingestion and vector indexing."""
 
     def ingest(self, request: IngestInput) -> IngestResponse:
-        result = ingest_and_embed(request.files, request.project_id)
+        result = ingest_and_embed(
+            request.files,
+            request.project_id,
+            replace_project=request.replace_project,
+        )
         return IngestResponse(indexed=result["indexed"])
 
 
