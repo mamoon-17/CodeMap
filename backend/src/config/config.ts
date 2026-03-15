@@ -14,7 +14,10 @@ export class Config {
     const port = process.env.PORT;
     this.PORT = port ? parseInt(port, 10) : undefined;
     // Python RAG service URL (replaces GEMINI_API_KEY and EMBEDDING_SERVICE_URL)
-    this.RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || process.env.EMBEDDING_SERVICE_URL || "http://localhost:5001";
+    this.RAG_SERVICE_URL =
+      process.env.RAG_SERVICE_URL ||
+      process.env.EMBEDDING_SERVICE_URL ||
+      "http://localhost:5001";
   }
 
   init(): Result<string, string[]> {

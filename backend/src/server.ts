@@ -1,8 +1,7 @@
 import "reflect-metadata";
 import app from "./app";
 import { config } from "./config/config";
-import { appDataSource } from "./config/datasource";
-import { ok, err, Result } from "neverthrow";
+import { AppDataSource } from "./config/datasource";
 
 const configResult = config.init();
 if (configResult.isErr()) {
@@ -13,20 +12,15 @@ if (configResult.isErr()) {
   process.exit(1);
 }
 
-const initializeDataSource = async (): Promise<Result<void, string>> => {
-  const dataSourceResult = appDataSource.getInstance();
-
-  if (dataSourceResult.isErr()) {
-    return err(dataSourceResult.error);
-  }
-
+const initializeDataSource = async () => {
   try {
-    await dataSourceResult.value.initialize();
-    return ok(undefined);
+    await AppDataSource.initialize();
+    console.log("Database connection initialized successfully");
   } catch (e) {
     console.error("Error during DataSource initialization:", e);
     const errorMessage = e instanceof Error ? e.message : String(e);
-    return err(`Failed to initialize DataSource: ${errorMessage}`);
+    console.error(`Failed to initialize DataSource: ${errorMessage}`);
+    process.exit(1);
   }
 };
 

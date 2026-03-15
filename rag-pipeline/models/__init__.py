@@ -5,6 +5,9 @@ from .schemas import (
     SourceChunk,
     HealthResponse,
     ErrorResponse,
+    FileInput,
+    IngestInput,
+    IngestResponse,
 )
 from .types_models import (
     ChunkMetadata,
@@ -12,6 +15,7 @@ from .types_models import (
     ToolCall,
     AgenticQueryResult,
 )
+from .db_models import Base, ChunkRecord
 
 __all__ = [
     "QueryRequest",
@@ -19,8 +23,13 @@ __all__ = [
     "SourceChunk",
     "HealthResponse",
     "ErrorResponse",
+    "FileInput",
+    "IngestInput",
+    "IngestResponse",
     "ChunkMetadata",
     "Chunk",
     "ToolCall",
     "AgenticQueryResult",
+    "Base",
+    "ChunkRecord",
 ]

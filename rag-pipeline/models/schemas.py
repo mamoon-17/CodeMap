@@ -51,3 +51,20 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     error: str
     detail: str | None = None
+
+
+class FileInput(BaseModel):
+    """Single file payload for ingestion"""
+    file_path: str
+    content: str
+
+
+class IngestInput(BaseModel):
+    """Request model for repository ingestion"""
+    project_id: str
+    files: list[FileInput]
+
+
+class IngestResponse(BaseModel):
+    """Response model for ingestion"""
+    indexed: int

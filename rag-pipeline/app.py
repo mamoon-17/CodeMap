@@ -4,19 +4,20 @@ Agentic RAG pipeline with LLM function calling and vector search
 
 This service combines:
 - OpenAI LLM with function calling
-- Vector search for code chunks (currently mock, ready for real vector DB)
+- Vector search for code chunks via ChromaDB and sentence-transformers
 - Async operations with type safety
 """
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import config
-from models.schemas import QueryRequest, QueryResponse, HealthResponse, ErrorResponse, SourceChunk
+from models.schemas import HealthResponse
+from routers.ingest import router as ingest_router
+from routers.query import router as query_router
 from services.rag_service import get_rag_service
-from constants import ERROR_MESSAGES
 
 # Configure logging
 logging.basicConfig(
@@ -84,6 +85,9 @@ app.add_middleware(
 # Routes
 # ---------------------------------------------------------------------------
 
+app.include_router(query_router)
+app.include_router(ingest_router)
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check() -> HealthResponse:
     """
@@ -96,80 +100,6 @@ async def health_check() -> HealthResponse:
         service="rag-service",
         config_valid=config.is_valid(),
     )
-
-
-@app.post(
-    "/query",
-    response_model=QueryResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["RAG"],
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid request"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
-)
-async def agentic_query(request: QueryRequest) -> QueryResponse:
-    """
-    Agentic RAG query endpoint
-    
-    The LLM decides whether to search the codebase based on the query:
-    - General programming questions: Direct answer without code search
-    - Code-specific questions: Searches codebase and provides answer with sources
-    
-    Args:
-        request: Query request with query text and optional top_k
-        
-    Returns:
-        QueryResponse with answer and optional source chunks
-        
-    Raises:
-        HTTPException: For validation errors or service failures
-    """
-    # Validate configuration
-    if not config.is_valid():
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ERROR_MESSAGES["MISSING_API_KEY"],
-        )
-    
-    try:
-        # Execute agentic query
-        rag_service = get_rag_service()
-        result = await rag_service.agentic_query(request.query, request.top_k)
-        
-        # Convert to response model
-        return QueryResponse(
-            query=result.query,
-            answer=result.answer,
-            tool_used=result.tool_used,
-            sources=[
-                SourceChunk(**source) for source in result.sources
-            ] if result.sources else None,
-        )
-    
-    except ValueError as e:
-        logger.error(f"Validation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Query processing error: {error_msg}")
-        
-        # Handle rate limit errors
-        if "RATE_LIMIT" in error_msg or "429" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded. Please try again later.",
-            )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process query: {error_msg}",
-        )
-
 
 # ---------------------------------------------------------------------------
 # Main Entry Point

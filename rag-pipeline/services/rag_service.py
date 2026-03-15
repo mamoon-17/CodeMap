@@ -3,7 +3,6 @@ RAG Service - Main agentic RAG pipeline
 Coordinates LLM and embedding service for intelligent code search
 """
 import logging
-from typing_extensions import TypedDict
 
 from services.llm.llm_client import get_llm_client
 from services.embedding_service import get_embedding_service
