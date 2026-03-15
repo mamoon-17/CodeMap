@@ -40,19 +40,6 @@ Node.js deletes temp folder
 Node.js updates project status to READY in Supabase
 ```
 
-### Search Flow (coming Sprint 2)
-```
-User types natural language query
-        ↓
-Node.js forwards query to POST /search
-        ↓
-Python embeds query using same model
-        ↓
-ChromaDB finds top 5 most similar chunks
-        ↓
-Returns file path, line numbers, code snippet
-```
-
 ## Project Structure
 ```
 ai-service/
