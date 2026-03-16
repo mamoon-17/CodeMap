@@ -81,10 +81,12 @@ class ProjectService {
     name: string,
     zipPath: string,
   ): Promise<Result<{ project: Project; files: string[] }, string>> {
+    let repo: any = null;
+    let saved: Project | null = null;
     try {
-      const repo = AppDataSource.getRepository(Project);
+      repo = AppDataSource.getRepository(Project);
       const project = repo.create({ name, status: ProjectStatus.INDEXING });
-      const saved = await repo.save(project);
+      saved = await repo.save(project);
 
       const extractPath = path.join("uploads", saved.id);
       const zip = new AdmZip(zipPath);
@@ -99,6 +101,14 @@ class ProjectService {
       return ok({ project: saved, files });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      if (repo && saved) {
+        try {
+          saved.status = ProjectStatus.FAILED;
+          await repo.save(saved);
+        } catch {
+          // Swallow errors from status update to avoid masking the original failure
+        }
+      }
       return err(`Upload failed: ${message}`);
     } finally {
       try {
