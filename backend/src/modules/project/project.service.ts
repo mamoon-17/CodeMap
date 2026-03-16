@@ -100,6 +100,12 @@ class ProjectService {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err(`Upload failed: ${message}`);
+    } finally {
+      try {
+        await fs.promises.unlink(zipPath);
+      } catch {
+        // Ignore errors during cleanup
+      }
     }
   }
 }
