@@ -7,6 +7,8 @@ export class Config {
   private SUPABASE_URI?: string;
   private PORT?: number;
   private RAG_SERVICE_URL?: string;
+  private JWT_ACCESS_SECRET?: string;
+  private JWT_REFRESH_SECRET?: string;
   private initialized = false;
 
   constructor() {
@@ -18,6 +20,8 @@ export class Config {
       process.env.RAG_SERVICE_URL ||
       process.env.EMBEDDING_SERVICE_URL ||
       "http://localhost:5001";
+    this.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
+    this.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
   }
 
   init(): Result<string, string[]> {
@@ -54,6 +58,14 @@ export class Config {
   getEmbeddingServiceUrl() {
     // Now returns Python RAG service URL
     return this.RAG_SERVICE_URL;
+  }
+
+  getJwtAccessSecret() {
+    return this.JWT_ACCESS_SECRET;
+  }
+
+  getJwtRefreshSecret() {
+    return this.JWT_REFRESH_SECRET;
   }
 }
 
