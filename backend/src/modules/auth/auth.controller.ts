@@ -173,10 +173,18 @@ export class AuthController {
         }
 
         // Save refresh token to database
-        await authService.updateRefreshToken(
+        const updateRefreshTokenResult = await authService.updateRefreshToken(
           user.id,
           tokensResult.refreshToken!,
         );
+
+        if (updateRefreshTokenResult.isErr()) {
+          res.status(500).json({
+            success: false,
+            error: updateRefreshTokenResult.error,
+          });
+          return;
+        }
 
         res.status(200).json({
           success: true,
