@@ -88,17 +88,17 @@ class ProjectService {
       const project = repo.create({ name, status: ProjectStatus.INDEXING });
       saved = await repo.save(project);
 
-      const extractPath = path.join("uploads", saved!.id);
+      const extractPath = path.join("uploads", saved.id);
       const zip = new AdmZip(zipPath);
       safeExtractZip(zip, extractPath);
 
       const files = walkDir(extractPath);
 
-      saved!.status = ProjectStatus.READY;
-      saved!.fileCount = files.length;
-      await repo.save(saved!);
+      saved.status = ProjectStatus.READY;
+      saved.fileCount = files.length;
+      await repo.save(saved);
 
-      return ok({ project: saved as Project, files });
+      return ok({ project: saved, files });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (repo && saved) {

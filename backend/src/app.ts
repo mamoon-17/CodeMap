@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import userRoutes from "./modules/user/user.routes";
 import authRoutes from "./modules/auth/auth.routes";
 import queryRoutes from "./modules/query/query.routes";
@@ -29,8 +30,6 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-
-// JWT-only authentication; passport/OAuth removed
 
 // Routes
 app.use("/users", userRoutes);

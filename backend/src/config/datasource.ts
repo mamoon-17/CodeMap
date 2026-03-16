@@ -14,7 +14,9 @@ const ssl =
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.SUPABASE_URI || config.getSupabaseUri(),
-  ssl,
+  ssl: {
+    rejectUnauthorized: false,
+  },
   entities: [User, Project],
   synchronize: true,
   dropSchema: false,
