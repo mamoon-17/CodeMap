@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Query from "./pages/Query";
 import "./App.css";
-import UploadRepo from "./components/UploadRepo";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import UploadRepo from "./components/UploadRepo";
 
 function App() {
   return (

@@ -26,6 +26,9 @@ export class Project {
   })
   status: ProjectStatus;
 
+  @Column({ type: "int", default: 0 })
+  fileCount: number;
+
   @CreateDateColumn()
   createdAt: Date;
 }

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @import "tailwindcss";
 
@@ -23,8 +23,8 @@
   --color-input: hsl(214 14% 89%);
   --color-ring: hsl(217 72% 45%);
   --radius: 0.5rem;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * {
@@ -39,7 +39,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-code, pre, .font-mono {
+code,
+pre,
+.font-mono {
   font-family: var(--font-mono);
 }
 
@@ -71,5 +73,3 @@ code, pre, .font-mono {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
-
-
