@@ -273,10 +273,18 @@ export class AuthController {
         }
 
         // Save refresh token to database
-        await authService.updateRefreshToken(
+        const updateResult = await authService.updateRefreshToken(
           user.id,
           tokensResult.refreshToken!,
         );
+
+        if (updateResult.isErr()) {
+          res.status(500).json({
+            success: false,
+            error: updateResult.error,
+          });
+          return;
+        }
 
         res.status(201).json({
           success: true,
@@ -349,7 +357,18 @@ export class AuthController {
     }
 
     // Update refresh token in database
-    await authService.updateRefreshToken(user.id, tokensResult.refreshToken!);
+    const updateResult = await authService.updateRefreshToken(
+      user.id,
+      tokensResult.refreshToken!,
+    );
+
+    if (updateResult.isErr()) {
+      res.status(500).json({
+        success: false,
+        error: updateResult.error,
+      });
+      return;
+    }
 
     res.status(200).json({
       success: true,
