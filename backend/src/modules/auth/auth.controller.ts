@@ -75,10 +75,21 @@ export class AuthController {
         }
 
         // Save refresh token to database
-        await authService.updateRefreshToken(
+        const updateResult = await authService.updateRefreshToken(
           user.id,
           tokensResult.refreshToken!,
         );
+
+        if (updateResult.isErr()) {
+          // Optionally log the persistence error for debugging/monitoring
+          console.error("Failed to persist refresh token for user", user.id, updateResult.error);
+
+          res.status(500).json({
+            success: false,
+            error: updateResult.error,
+          });
+          return;
+        }
 
         res.status(201).json({
           success: true,
