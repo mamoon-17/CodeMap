@@ -1,119 +1,75 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: 210 20% 98%;
-    --foreground: 220 20% 10%;
+@theme {
+  --color-background: hsl(210 20% 98%);
+  --color-foreground: hsl(220 20% 10%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(220 20% 10%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(220 20% 10%);
+  --color-primary: hsl(217 72% 45%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(210 16% 93%);
+  --color-secondary-foreground: hsl(220 20% 10%);
+  --color-muted: hsl(210 14% 95%);
+  --color-muted-foreground: hsl(215 12% 48%);
+  --color-accent: hsl(210 16% 93%);
+  --color-accent-foreground: hsl(220 20% 10%);
+  --color-destructive: hsl(0 68% 48%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(214 14% 89%);
+  --color-input: hsl(214 14% 89%);
+  --color-ring: hsl(217 72% 45%);
+  --radius: 0.5rem;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
 
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+* {
+  border-color: var(--color-border);
+}
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-    --primary: 217 72% 45%;
-    --primary-foreground: 0 0% 100%;
+code,
+pre,
+.font-mono {
+  font-family: var(--font-mono);
+}
 
-    --secondary: 210 16% 93%;
-    --secondary-foreground: 220 20% 10%;
+.text-balance {
+  text-wrap: balance;
+}
 
-    --muted: 210 14% 95%;
-    --muted-foreground: 215 12% 48%;
-
-    --accent: 210 16% 93%;
-    --accent-foreground: 220 20% 10%;
-
-    --destructive: 0 68% 48%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 214 14% 89%;
-    --input: 214 14% 89%;
-    --ring: 217 72% 45%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 20% 10%;
-    --sidebar-primary: 217 72% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 16% 93%;
-    --sidebar-accent-foreground: 220 20% 10%;
-    --sidebar-border: 214 14% 89%;
-    --sidebar-ring: 217 72% 45%;
-
-    --surface: 0 0% 100%;
-    --surface-raised: 0 0% 100%;
-    --surface-overlay: 0 0% 100%;
-    --text-primary: 220 20% 10%;
-    --text-secondary: 215 12% 48%;
-    --text-tertiary: 215 10% 60%;
-    --success: 152 60% 36%;
-    --warning: 36 86% 48%;
-    --code-bg: 210 20% 97%;
-    --code-line-highlight: 217 60% 96%;
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
-
-  .dark {
-    --background: 222 22% 7%;
-    --foreground: 210 20% 96%;
-    --card: 222 20% 11%;
-    --card-foreground: 210 20% 96%;
-    --popover: 222 20% 11%;
-    --popover-foreground: 210 20% 96%;
-    --primary: 217 72% 56%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 16% 18%;
-    --secondary-foreground: 210 20% 96%;
-    --muted: 222 16% 15%;
-    --muted-foreground: 215 10% 52%;
-    --accent: 222 16% 18%;
-    --accent-foreground: 210 20% 96%;
-    --destructive: 0 68% 48%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 222 14% 20%;
-    --input: 222 14% 20%;
-    --ring: 217 72% 56%;
-    --sidebar-background: 222 20% 9%;
-    --sidebar-foreground: 210 20% 96%;
-    --sidebar-primary: 217 72% 56%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 16% 15%;
-    --sidebar-accent-foreground: 210 20% 96%;
-    --sidebar-border: 222 14% 20%;
-    --sidebar-ring: 217 72% 56%;
-    --surface: 222 20% 11%;
-    --surface-raised: 222 16% 14%;
-    --surface-overlay: 222 16% 16%;
-    --code-bg: 222 20% 9%;
-    --code-line-highlight: 217 50% 18%;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-family:
-      "Inter",
-      system-ui,
-      -apple-system,
-      sans-serif;
-  }
-  code,
-  pre,
-  .font-mono {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+.animate-spin {
+  animation: spin 1s linear infinite;
 }

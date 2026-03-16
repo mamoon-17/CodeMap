@@ -11,7 +11,7 @@ export interface JwtPayload {
 export class JwtUtil {
   generateAccessToken(payload: JwtPayload): Result<string, string> {
     try {
-      const secret = config.getJwtAccessSecret();
+      const secret = config.getJwtAccessSecret()!;
       const token = jwt.sign(payload, secret, {
         expiresIn: "15m",
       });
@@ -24,7 +24,7 @@ export class JwtUtil {
 
   generateRefreshToken(payload: JwtPayload): Result<string, string> {
     try {
-      const secret = config.getJwtRefreshSecret();
+      const secret = config.getJwtRefreshSecret()!;
       // Include a small nonce to ensure a newly generated refresh token
       // is different even if called within the same second.
       const refreshPayload = { ...payload, nonce: Date.now().toString() };
@@ -40,8 +40,8 @@ export class JwtUtil {
 
   verifyAccessToken(token: string): Result<JwtPayload, string> {
     try {
-      const secret = config.getJwtAccessSecret();
-      const decoded = jwt.verify(token, secret) as JwtPayload;
+      const secret = config.getJwtAccessSecret()!;
+      const decoded = jwt.verify(token, secret) as unknown as JwtPayload;
       return ok(decoded);
     } catch (e) {
       if (e instanceof jwt.TokenExpiredError) {
@@ -57,8 +57,8 @@ export class JwtUtil {
 
   verifyRefreshToken(token: string): Result<JwtPayload, string> {
     try {
-      const secret = config.getJwtRefreshSecret();
-      const decoded = jwt.verify(token, secret) as JwtPayload;
+      const secret = config.getJwtRefreshSecret()!;
+      const decoded = jwt.verify(token, secret) as unknown as JwtPayload;
       return ok(decoded);
     } catch (e) {
       if (e instanceof jwt.TokenExpiredError) {

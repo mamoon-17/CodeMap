@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Search, MessageSquare, FileCode, ArrowRight, Terminal } from "lucide-react";
+import {
+  Search,
+  MessageSquare,
+  FileCode,
+  ArrowRight,
+  Terminal,
+} from "lucide-react";
 
 const features = [
   {
@@ -34,8 +40,8 @@ const FULL_PARTS = [
   { text: AI_SUFFIX, type: "plain" as const },
 ];
 
-const CHAR_DELAY = 28;          // ms per character
-const CODE_REF_DELAY = 350;     // ms after typing finishes
+const CHAR_DELAY = 28; // ms per character
+const CODE_REF_DELAY = 350; // ms after typing finishes
 
 const Landing = () => {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -56,7 +62,7 @@ const Landing = () => {
           observer.disconnect();
         }
       },
-      { threshold: 0.4 }
+      { threshold: 0.4 },
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -94,9 +100,13 @@ const Landing = () => {
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
           <Link to="/" className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold text-primary-foreground font-mono">&lt;/&gt;</span>
+              <span className="text-xs font-bold text-primary-foreground font-mono">
+                &lt;/&gt;
+              </span>
             </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">CodeMap</span>
+            <span className="text-lg font-semibold tracking-tight text-foreground">
+              CodeMap
+            </span>
           </Link>
           <div className="flex items-center gap-2">
             <Link
@@ -149,23 +159,32 @@ const Landing = () => {
         </div>
 
         {/* Terminal preview */}
-        <div ref={terminalRef} className="mt-16 overflow-hidden rounded-lg border bg-card shadow-[0_8px_12px_rgba(0,0,0,0.15)]">
+        <div
+          ref={terminalRef}
+          className="mt-16 overflow-hidden rounded-lg border bg-card shadow-[0_8px_12px_rgba(0,0,0,0.15)]"
+        >
           <div className="flex items-center gap-1.5 border-b px-4 py-2.5 bg-muted/30">
             <div className="h-2.5 w-2.5 rounded-full bg-red-400/50" />
             <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/50" />
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/50" />
-            <span className="ml-3 text-xs text-muted-foreground font-mono">codemap — query</span>
+            <span className="ml-3 text-xs text-muted-foreground font-mono">
+              codemap — query
+            </span>
           </div>
           <div className="p-6 space-y-5">
             <div className="flex gap-3">
-              <span className="text-xs text-muted-foreground font-mono mt-1 shrink-0 w-6 text-right">YOU</span>
+              <span className="text-xs text-muted-foreground font-mono mt-1 shrink-0 w-6 text-right">
+                YOU
+              </span>
               <div className="rounded-md bg-secondary/70 px-3.5 py-2 text-sm text-foreground">
                 Where is authentication implemented?
               </div>
             </div>
             {hasStarted && (
               <div className="flex gap-3">
-                <span className="text-xs text-primary font-mono mt-1 font-medium shrink-0 w-6 text-right">AI</span>
+                <span className="text-xs text-primary font-mono mt-1 font-medium shrink-0 w-6 text-right">
+                  AI
+                </span>
                 <div className="space-y-2 text-sm text-foreground flex-1">
                   <p className="text-muted-foreground leading-relaxed">
                     {visibleParts().map((part, i) =>
@@ -180,10 +199,10 @@ const Landing = () => {
                         ) : (
                           <span key={i}>{part.text}</span>
                         )
-                      ) : null
+                      ) : null,
                     )}
                     {charIndex < totalChars && (
-                      <span className="inline-block w-[2px] h-4 align-text-bottom bg-primary animate-pulse ml-0.5" />
+                      <span className="inline-block w-0.5 h-4 align-text-bottom bg-primary animate-pulse ml-0.5" />
                     )}
                   </p>
 
@@ -191,12 +210,14 @@ const Landing = () => {
                   <div
                     className={`rounded border bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground
                       transition-all duration-300 ease-out origin-top
-                      ${showCodeRef
-                        ? "opacity-100 max-h-20 translate-y-0"
-                        : "opacity-0 max-h-0 translate-y-1 overflow-hidden py-0 border-transparent"
+                      ${
+                        showCodeRef
+                          ? "opacity-100 max-h-20 translate-y-0"
+                          : "opacity-0 max-h-0 translate-y-1 overflow-hidden py-0 border-transparent"
                       }`}
                   >
-                    <span className="text-primary">src/auth/middleware.ts</span> — lines 12-34
+                    <span className="text-primary">src/auth/middleware.ts</span>{" "}
+                    — lines 12-34
                   </div>
                 </div>
               </div>
@@ -208,15 +229,21 @@ const Landing = () => {
       {/* Features */}
       <section className="border-t bg-card/50">
         <div className="mx-auto max-w-5xl px-6 py-12">
-          <h2 className="text-2xl font-semibold text-foreground mb-1.5">How it works</h2>
-          <p className="text-sm text-muted-foreground mb-8">Everything you need to navigate an unfamiliar codebase.</p>
+          <h2 className="text-2xl font-semibold text-foreground mb-1.5">
+            How it works
+          </h2>
+          <p className="text-sm text-muted-foreground mb-8">
+            Everything you need to navigate an unfamiliar codebase.
+          </p>
           <div className="grid gap-10 sm:grid-cols-3">
-            {features.map((feature, i) => (
+            {features.map((feature) => (
               <div key={feature.title}>
                 <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md border bg-background text-primary">
                   <feature.icon size={18} />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground mb-1.5">{feature.title}</h3>
+                <h3 className="text-sm font-semibold text-foreground mb-1.5">
+                  {feature.title}
+                </h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {feature.description}
                 </p>
@@ -231,8 +258,20 @@ const Landing = () => {
         <div className="mx-auto max-w-5xl px-6 py-6 flex items-center justify-between">
           <p className="text-xs text-muted-foreground">&copy; 2026 CodeMap</p>
           <div className="flex items-center gap-5">
-            <a href="mailto:hello@codemap.dev" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact us</a>
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">GitHub</a>
+            <a
+              href="mailto:hello@codemap.dev"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Contact us
+            </a>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              GitHub
+            </a>
           </div>
         </div>
       </footer>

@@ -25,6 +25,7 @@ const initializeDataSource = async () => {
 };
 
 initializeDataSource().then(() => {
+  console.log("Database connected successfully");
   const PORT = config.getPort();
   app.listen(PORT, () => {
     console.log(`Server active at: http://localhost:${PORT}`);
