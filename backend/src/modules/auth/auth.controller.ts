@@ -220,7 +220,26 @@ export class AuthController {
     verifyResult.match(
       async (payload) => {
         // Clear refresh token from database
-        await authService.updateRefreshToken(payload.userId, null);
+        const updateResult = await authService.updateRefreshToken(
+          payload.userId,
+          null,
+        );
+
+        if (updateResult.isErr()) {
+          // If we fail to clear the refresh token, return an error so the
+          // session is not reported as successfully logged out.
+          console.error(
+            "Failed to clear refresh token on logout for user",
+            payload.userId,
+            updateResult.error,
+          );
+          res.status(500).json({
+            success: false,
+            message: "Failed to logout",
+            error: updateResult.error,
+          });
+          return;
+        }
 
         res.status(200).json({
           success: true,
