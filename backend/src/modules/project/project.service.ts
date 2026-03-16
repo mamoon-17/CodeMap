@@ -40,6 +40,31 @@ function walkDir(dir: string): string[] {
   return results;
 }
 
+function safeExtractZip(zip: AdmZip, extractPath: string): void {
+  const extractRoot = path.resolve(extractPath);
+  const entries = zip.getEntries();
+
+  for (const entry of entries) {
+    const entryName = entry.entryName;
+    const destPath = path.resolve(path.join(extractPath, entryName));
+
+    // Prevent Zip Slip / path traversal: ensure destination is within extractRoot
+    if (!destPath.startsWith(extractRoot + path.sep) && destPath !== extractRoot) {
+      throw new Error("Invalid entry path in ZIP file");
+    }
+
+    if (entry.isDirectory) {
+      fs.mkdirSync(destPath, { recursive: true });
+      continue;
+    }
+
+    const destDir = path.dirname(destPath);
+    fs.mkdirSync(destDir, { recursive: true });
+    const data = entry.getData();
+    fs.writeFileSync(destPath, data);
+  }
+}
+
 class ProjectService {
   async listAll(): Promise<Result<Project[], string>> {
     try {
@@ -63,7 +88,7 @@ class ProjectService {
 
       const extractPath = path.join("uploads", saved.id);
       const zip = new AdmZip(zipPath);
-      zip.extractAllTo(extractPath, true);
+      safeExtractZip(zip, extractPath);
 
       const files = walkDir(extractPath);
 
