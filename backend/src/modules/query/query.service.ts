@@ -8,7 +8,7 @@ class QueryService {
   constructor() {
     // Python RAG service URL (previously embedding service URL)
     this.ragServiceUrl =
-      config.getEmbeddingServiceUrl() || "http://localhost:5001";
+      config.getEmbeddingServiceUrl() || "http://localhost:8000";
   }
 
   /**

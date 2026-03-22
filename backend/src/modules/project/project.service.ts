@@ -49,7 +49,10 @@ function safeExtractZip(zip: AdmZip, extractPath: string): void {
     const destPath = path.resolve(path.join(extractPath, entryName));
 
     // Prevent Zip Slip / path traversal: ensure destination is within extractRoot
-    if (!destPath.startsWith(extractRoot + path.sep) && destPath !== extractRoot) {
+    if (
+      !destPath.startsWith(extractRoot + path.sep) &&
+      destPath !== extractRoot
+    ) {
       throw new Error("Invalid entry path in ZIP file");
     }
 
@@ -87,6 +90,10 @@ class ProjectService {
       repo = AppDataSource.getRepository(Project);
       const project = repo.create({ name, status: ProjectStatus.INDEXING });
       saved = await repo.save(project);
+
+      if (!saved) {
+        return err("Failed to save project");
+      }
 
       const extractPath = path.join("uploads", saved.id);
       const zip = new AdmZip(zipPath);
