@@ -17,6 +17,7 @@ from config import config
 from models.schemas import HealthResponse
 from routers.ingest import router as ingest_router
 from routers.query import router as query_router
+from services.embedder import warmup_model
 from services.rag_service import get_rag_service
 
 # Configure logging
@@ -51,6 +52,16 @@ async def lifespan(app: FastAPI):
         logger.info("✅ RAG service initialized")
     except Exception as e:
         logger.error(f"❌ Failed to initialize RAG service: {e}")
+
+    # Warm up the embedding model at startup.
+    # On Windows + uvicorn reload, lazy-loading the model during a request
+    # triggers an OSError [Errno 22] from tqdm's sys.stderr.flush(). Preloading
+    # it here while stderr is still healthy avoids that.
+    try:
+        warmup_model()
+        logger.info("✅ Embedding model warmed up")
+    except Exception as e:
+        logger.error(f"❌ Failed to warm up embedding model: {e}")
     
     logger.info(f"🎯 RAG service ready on port {config.PORT}")
     
@@ -71,10 +82,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware (allow local frontend dev origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -49,6 +49,33 @@ class QueryResponse(BaseModel):
     sources: list[SourceChunk] | None = None
 
 
+class SnippetAnalysisRequest(BaseModel):
+    """Request model for analyzing a single code snippet."""
+    file_path: str = Field(..., min_length=1, description="Path of the file the snippet came from")
+    code: str = Field(..., min_length=1, description="Code snippet content")
+
+    @field_validator("file_path")
+    @classmethod
+    def validate_file_path(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("file_path is required")
+        return v.strip()
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("code is required")
+        return v
+
+
+class SnippetAnalysisResponse(BaseModel):
+    """Response model for snippet analysis."""
+    file_path: str
+    summary: str
+    explanation: str
+
+
 class HealthResponse(BaseModel):
     """Health check response"""
     status: str

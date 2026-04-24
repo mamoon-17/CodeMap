@@ -4,5 +4,7 @@ import { queryController } from "./query.controller";
 const router = Router();
 
 router.post("/", queryController.agenticQuery);
+router.post("/analyze-snippet", queryController.analyzeSnippet);
+router.post("/ingest", queryController.ingestFiles);
 
 export default router;

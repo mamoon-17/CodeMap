@@ -1,9 +1,53 @@
 from __future__ import annotations
 
+import os
+import sys
+
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
+
+class _SafeStderr:
+    """Wrapper around sys.stderr that swallows OSError on write/flush.
+
+    Works around a Windows-specific issue where tqdm (used by transformers while
+    loading model weights) calls sys.stderr.flush() and raises
+    OSError [Errno 22] when run under uvicorn's reload subprocess.
+    """
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def write(self, data):
+        try:
+            return self._wrapped.write(data)
+        except OSError:
+            return len(data) if isinstance(data, (str, bytes)) else 0
+
+    def flush(self):
+        try:
+            return self._wrapped.flush()
+        except OSError:
+            return None
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+
+if not isinstance(sys.stderr, _SafeStderr):
+    sys.stderr = _SafeStderr(sys.stderr)
+
 from typing import Any, Iterable
 
 import chromadb
 from sentence_transformers import SentenceTransformer
+
+try:
+    from transformers.utils import logging as _hf_logging
+
+    _hf_logging.disable_progress_bar()
+except Exception:
+    pass
 
 from services.chunker import chunk_file
 
@@ -16,6 +60,11 @@ def _get_model() -> SentenceTransformer:
     if _model is None:
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
+
+
+def warmup_model() -> None:
+    """Preload the model at startup to avoid Windows/uvicorn tqdm issues on first request."""
+    _get_model()
 
 
 def _get_chroma_client() -> chromadb.PersistentClient:
@@ -58,7 +107,7 @@ def ingest_and_embed(
         chunks = chunk_file(file.file_path, file.content)
 
         for chunk in chunks:
-            embedding = model.encode(chunk["text"]).tolist()
+            embedding = model.encode(chunk["text"], show_progress_bar=False).tolist()
             chunk_id = f"{project_id}_{chunk['file_path']}_{chunk['start_line']}"
 
             # Upsert prevents duplicate-id failures on re-ingestion.
@@ -88,7 +137,7 @@ def retrieve_similar_chunks(
     """Retrieve top-k chunks from one project or across all project collections."""
     client = _get_chroma_client()
     model = _get_model()
-    query_embedding = model.encode(query_text).tolist()
+    query_embedding = model.encode(query_text, show_progress_bar=False).tolist()
 
     collections: list[Any] = []
     if project_id:

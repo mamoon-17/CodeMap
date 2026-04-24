@@ -63,8 +63,15 @@ const SignUp = () => {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed");
-      localStorage.setItem("accessToken", data.accessToken);
+      if (!res.ok) {
+        const message = data.errors
+          ? (data.errors as string[]).join(", ")
+          : data.error || "Registration failed";
+        throw new Error(message);
+      }
+      const accessToken = data.data?.accessToken;
+      if (!accessToken) throw new Error("Registration failed: missing access token");
+      localStorage.setItem("accessToken", accessToken);
       navigate("/dashboard");
     } catch (err: unknown) {
       setServerError(
