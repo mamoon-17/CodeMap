@@ -13,6 +13,36 @@ export class AuthController {
     return `${req.protocol}://${req.get("host")}/auth/${provider}/callback`;
   }
 
+  private getFrontendBaseUrl(): string {
+    return config.getFrontendUrl() || "http://localhost:5173";
+  }
+
+  private redirectOAuthSuccess(
+    res: Response,
+    provider: "google" | "github",
+    accessToken: string,
+    refreshToken: string,
+  ): void {
+    const redirectUrl = new URL("/oauth/callback", this.getFrontendBaseUrl());
+    redirectUrl.searchParams.set("provider", provider);
+    redirectUrl.searchParams.set("accessToken", accessToken);
+    redirectUrl.searchParams.set("refreshToken", refreshToken);
+
+    res.redirect(302, redirectUrl.toString());
+  }
+
+  private redirectOAuthError(
+    res: Response,
+    provider: "google" | "github",
+    error: string,
+  ): void {
+    const redirectUrl = new URL("/oauth/callback", this.getFrontendBaseUrl());
+    redirectUrl.searchParams.set("provider", provider);
+    redirectUrl.searchParams.set("error", error);
+
+    res.redirect(302, redirectUrl.toString());
+  }
+
   private async completeOAuthLogin(
     user: User,
     provider: "google" | "github",
@@ -21,10 +51,11 @@ export class AuthController {
     const tokensResult = this.generateTokensForUser(user);
 
     if (!tokensResult.success) {
-      res.status(500).json({
-        success: false,
-        error: tokensResult.error,
-      });
+      this.redirectOAuthError(
+        res,
+        provider,
+        tokensResult.error || "Failed to generate OAuth tokens",
+      );
       return;
     }
 
@@ -34,27 +65,16 @@ export class AuthController {
     );
 
     if (updateResult.isErr()) {
-      res.status(500).json({
-        success: false,
-        error: updateResult.error,
-      });
+      this.redirectOAuthError(res, provider, updateResult.error);
       return;
     }
 
-    res.status(200).json({
-      success: true,
-      message: `${provider} login successful`,
-      data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          authProvider: user.authProvider,
-        },
-        accessToken: tokensResult.accessToken,
-        refreshToken: tokensResult.refreshToken,
-      },
-    });
+    this.redirectOAuthSuccess(
+      res,
+      provider,
+      tokensResult.accessToken!,
+      tokensResult.refreshToken!,
+    );
   }
 
   googleAuthStart(req: Request, res: Response): void {
@@ -94,18 +114,12 @@ export class AuthController {
     res.clearCookie("google_oauth_state");
 
     if (typeof code !== "string") {
-      res.status(400).json({
-        success: false,
-        error: "Missing Google authorization code",
-      });
+      this.redirectOAuthError(res, "google", "Missing Google authorization code");
       return;
     }
 
     if (typeof state !== "string" || !savedState || state !== savedState) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid Google OAuth state",
-      });
+      this.redirectOAuthError(res, "google", "Invalid Google OAuth state");
       return;
     }
 
@@ -113,10 +127,7 @@ export class AuthController {
     const clientSecret = config.getGoogleClientSecret();
 
     if (!clientId || !clientSecret) {
-      res.status(500).json({
-        success: false,
-        error: "Google OAuth is not fully configured",
-      });
+      this.redirectOAuthError(res, "google", "Google OAuth is not fully configured");
       return;
     }
 
@@ -138,10 +149,11 @@ export class AuthController {
 
       if (!tokenResponse.ok) {
         const tokenError = await tokenResponse.text();
-        res.status(400).json({
-          success: false,
-          error: `Google token exchange failed: ${tokenError}`,
-        });
+        this.redirectOAuthError(
+          res,
+          "google",
+          `Google token exchange failed: ${tokenError}`,
+        );
         return;
       }
 
@@ -150,10 +162,7 @@ export class AuthController {
       };
 
       if (!tokenData.access_token) {
-        res.status(400).json({
-          success: false,
-          error: "Google access token missing",
-        });
+        this.redirectOAuthError(res, "google", "Google access token missing");
         return;
       }
 
@@ -168,10 +177,11 @@ export class AuthController {
 
       if (!profileResponse.ok) {
         const profileError = await profileResponse.text();
-        res.status(400).json({
-          success: false,
-          error: `Failed to fetch Google profile: ${profileError}`,
-        });
+        this.redirectOAuthError(
+          res,
+          "google",
+          `Failed to fetch Google profile: ${profileError}`,
+        );
         return;
       }
 
@@ -182,10 +192,11 @@ export class AuthController {
       };
 
       if (!profile.id || !profile.email) {
-        res.status(400).json({
-          success: false,
-          error: "Google profile is missing required fields",
-        });
+        this.redirectOAuthError(
+          res,
+          "google",
+          "Google profile is missing required fields",
+        );
         return;
       }
 
@@ -204,18 +215,12 @@ export class AuthController {
           await this.completeOAuthLogin(user, "google", res);
         },
         (error) => {
-          res.status(400).json({
-            success: false,
-            error,
-          });
+          this.redirectOAuthError(res, "google", error);
         },
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
-      res.status(500).json({
-        success: false,
-        error: `Google OAuth failed: ${errorMessage}`,
-      });
+      this.redirectOAuthError(res, "google", `Google OAuth failed: ${errorMessage}`);
     }
   }
 
@@ -254,18 +259,12 @@ export class AuthController {
     res.clearCookie("github_oauth_state");
 
     if (typeof code !== "string") {
-      res.status(400).json({
-        success: false,
-        error: "Missing GitHub authorization code",
-      });
+      this.redirectOAuthError(res, "github", "Missing GitHub authorization code");
       return;
     }
 
     if (typeof state !== "string" || !savedState || state !== savedState) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid GitHub OAuth state",
-      });
+      this.redirectOAuthError(res, "github", "Invalid GitHub OAuth state");
       return;
     }
 
@@ -273,10 +272,7 @@ export class AuthController {
     const clientSecret = config.getGithubClientSecret();
 
     if (!clientId || !clientSecret) {
-      res.status(500).json({
-        success: false,
-        error: "GitHub OAuth is not fully configured",
-      });
+      this.redirectOAuthError(res, "github", "GitHub OAuth is not fully configured");
       return;
     }
 
@@ -301,10 +297,11 @@ export class AuthController {
 
       if (!tokenResponse.ok) {
         const tokenError = await tokenResponse.text();
-        res.status(400).json({
-          success: false,
-          error: `GitHub token exchange failed: ${tokenError}`,
-        });
+        this.redirectOAuthError(
+          res,
+          "github",
+          `GitHub token exchange failed: ${tokenError}`,
+        );
         return;
       }
 
@@ -313,10 +310,7 @@ export class AuthController {
       };
 
       if (!tokenData.access_token) {
-        res.status(400).json({
-          success: false,
-          error: "GitHub access token missing",
-        });
+        this.redirectOAuthError(res, "github", "GitHub access token missing");
         return;
       }
 
@@ -340,10 +334,11 @@ export class AuthController {
       if (!userResponse.ok || !emailsResponse.ok) {
         const profileError = await userResponse.text();
         const emailError = await emailsResponse.text();
-        res.status(400).json({
-          success: false,
-          error: `Failed to fetch GitHub profile (${profileError}) or emails (${emailError})`,
-        });
+        this.redirectOAuthError(
+          res,
+          "github",
+          `Failed to fetch GitHub profile (${profileError}) or emails (${emailError})`,
+        );
         return;
       }
 
@@ -364,10 +359,11 @@ export class AuthController {
       );
 
       if (!githubUser.id || !primaryVerifiedEmail?.email) {
-        res.status(400).json({
-          success: false,
-          error: "GitHub profile is missing required fields",
-        });
+        this.redirectOAuthError(
+          res,
+          "github",
+          "GitHub profile is missing required fields",
+        );
         return;
       }
 
@@ -383,18 +379,12 @@ export class AuthController {
           await this.completeOAuthLogin(user, "github", res);
         },
         (error) => {
-          res.status(400).json({
-            success: false,
-            error,
-          });
+          this.redirectOAuthError(res, "github", error);
         },
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
-      res.status(500).json({
-        success: false,
-        error: `GitHub OAuth failed: ${errorMessage}`,
-      });
+      this.redirectOAuthError(res, "github", `GitHub OAuth failed: ${errorMessage}`);
     }
   }
 

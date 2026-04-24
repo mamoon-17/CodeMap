@@ -1,7 +1,11 @@
 import dotenv from "dotenv";
+import path from "path";
 import { ok, err, Result } from "neverthrow";
 
-dotenv.config();
+dotenv.config({
+  path: path.resolve(__dirname, "../../.env"),
+  override: true,
+});
 
 export class Config {
   private SUPABASE_URI?: string;

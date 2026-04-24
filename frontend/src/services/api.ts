@@ -7,8 +7,6 @@ import type {
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const RAG_BASE_URL =
-  import.meta.env.VITE_RAG_BASE_URL || "http://localhost:5001";
 
 export async function queryCodebase(
   request: QueryRequest,
@@ -36,7 +34,7 @@ export async function queryCodebase(
 export async function ingestCodebase(
   request: IngestRequest,
 ): Promise<IngestResponse> {
-  const response = await fetch(`${RAG_BASE_URL}/ingest`, {
+  const response = await fetch(`${API_BASE_URL}/query/ingest`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -48,11 +46,12 @@ export async function ingestCodebase(
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(
+    const baseMessage =
       error.detail ||
-        error.error ||
-        `HTTP ${response.status}: ${response.statusText}`,
-    );
+      error.error ||
+      `HTTP ${response.status}: ${response.statusText}`;
+    const details = error.details ? ` — ${error.details}` : "";
+    throw new Error(`${baseMessage}${details}`);
   }
 
   return response.json();

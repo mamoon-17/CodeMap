@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const Login = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -26,6 +29,10 @@ const Login = () => {
 
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const startOAuth = (provider: "google" | "github") => {
+    window.location.href = `${API_BASE_URL}/auth/${provider}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,6 +195,7 @@ const Login = () => {
               variant="outline"
               type="button"
               className="gap-2 text-sm h-10"
+              onClick={() => startOAuth("github")}
             >
               <Github size={15} /> GitHub
             </Button>
@@ -195,6 +203,7 @@ const Login = () => {
               variant="outline"
               type="button"
               className="gap-2 text-sm h-10"
+              onClick={() => startOAuth("google")}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path

@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const strengthChecks = [
   { label: "8+ characters", test: (p: string) => p.length >= 8 },
   { label: "Uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
@@ -46,6 +49,10 @@ const SignUp = () => {
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const startOAuth = (provider: "google" | "github") => {
+    window.location.href = `${API_BASE_URL}/auth/${provider}`;
+  };
+
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!validate()) return;
@@ -63,8 +70,15 @@ const SignUp = () => {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed");
-      localStorage.setItem("accessToken", data.accessToken);
+      if (!res.ok) {
+        const message = data.errors
+          ? (data.errors as string[]).join(", ")
+          : data.error || "Registration failed";
+        throw new Error(message);
+      }
+      const accessToken = data.data?.accessToken;
+      if (!accessToken) throw new Error("Registration failed: missing access token");
+      localStorage.setItem("accessToken", accessToken);
       navigate("/dashboard");
     } catch (err: unknown) {
       setServerError(
@@ -272,6 +286,7 @@ const SignUp = () => {
               variant="outline"
               type="button"
               className="gap-2 text-sm h-10"
+              onClick={() => startOAuth("github")}
             >
               <Github size={15} /> GitHub
             </Button>
@@ -279,6 +294,7 @@ const SignUp = () => {
               variant="outline"
               type="button"
               className="gap-2 text-sm h-10"
+              onClick={() => startOAuth("google")}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path
