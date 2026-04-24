@@ -10,6 +10,73 @@ export class AuthService {
     return AppDataSource.getRepository(User);
   }
 
+  async loginOrCreateOAuthUser(params: {
+    provider: AuthProvider.GOOGLE | AuthProvider.GITHUB;
+    providerId: string;
+    email: string;
+    username: string;
+  }): Promise<Result<User, string>> {
+    const repository = this.getUserRepository();
+
+    try {
+      const providerWhere =
+        params.provider === AuthProvider.GOOGLE
+          ? { googleId: params.providerId }
+          : { githubId: params.providerId };
+
+      const existingByProvider = await repository.findOne({
+        where: providerWhere,
+      });
+
+      if (existingByProvider) {
+        existingByProvider.lastLogin = new Date();
+        const updatedUser = await repository.save(existingByProvider);
+        return ok(updatedUser);
+      }
+
+      const existingByEmail = await repository.findOne({
+        where: { email: params.email },
+      });
+
+      if (existingByEmail) {
+        if (existingByEmail.authProvider !== params.provider) {
+          return err(
+            `This email is already registered with ${existingByEmail.authProvider} authentication.`,
+          );
+        }
+
+        if (params.provider === AuthProvider.GOOGLE) {
+          existingByEmail.googleId = params.providerId;
+        } else {
+          existingByEmail.githubId = params.providerId;
+        }
+
+        existingByEmail.lastLogin = new Date();
+        const updatedUser = await repository.save(existingByEmail);
+        return ok(updatedUser);
+      }
+
+      const newOAuthUser = repository.create({
+        username: params.username,
+        email: params.email,
+        password: null,
+        authProvider: params.provider,
+        googleId:
+          params.provider === AuthProvider.GOOGLE ? params.providerId : null,
+        githubId:
+          params.provider === AuthProvider.GITHUB ? params.providerId : null,
+        isGuest: false,
+        lastLogin: new Date(),
+      });
+
+      const savedUser = await repository.save(newOAuthUser);
+      return ok(savedUser);
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      return err(`Failed OAuth login: ${errorMessage}`);
+    }
+  }
+
   async register(
     dto: RegisterDto,
     hashedPassword: string,

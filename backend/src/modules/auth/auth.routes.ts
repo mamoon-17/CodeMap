@@ -20,7 +20,14 @@ router.post(
 router.post("/logout", (req, res) => authController.logout(req, res));
 
 // OAuth authentication
-// OAuth routes removed — JWT-only authentication
+router.get("/google", (req, res) => authController.googleAuthStart(req, res));
+router.get("/google/callback", (req, res) =>
+  authController.googleAuthCallback(req, res),
+);
+router.get("/github", (req, res) => authController.githubAuthStart(req, res));
+router.get("/github/callback", (req, res) =>
+  authController.githubAuthCallback(req, res),
+);
 
 // Guest authentication
 router.post("/guest", (req, res) => authController.guestLogin(req, res));
