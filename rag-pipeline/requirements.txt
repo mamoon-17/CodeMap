@@ -1,8 +1,10 @@
 # FastAPI and dependencies
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-pydantic==2.9.0
-pydantic-settings==2.5.0
+# Pydantic v2.9 is too old for Python 3.14 on Windows (no wheels for pydantic-core).
+# Use a newer Pydantic that ships cp314 wheels via pydantic-core.
+pydantic>=2.11.0
+pydantic-settings>=2.7.0
 
 # OpenAI
 openai==1.54.0
@@ -11,7 +13,7 @@ openai==1.54.0
 python-dotenv==1.0.1
 
 # Type checking
-typing-extensions==4.12.0
+typing-extensions>=4.12.2
 
 # Testing
 pytest==8.3.0
