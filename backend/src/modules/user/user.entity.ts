@@ -37,8 +37,11 @@ export class User {
   @Column({ type: "varchar", nullable: true })
   googleId: string | null;
 
-  @Column({ type: "varchar", nullable: true })
+  @Column({ type: "varchar", nullable: true, unique: true })
   githubId: string | null;
+
+  @Column({ type: "text", nullable: true })
+  githubAccessToken: string | null;
 
   @Column({ type: "varchar", nullable: true })
   avatarUrl: string | null;

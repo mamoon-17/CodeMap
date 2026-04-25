@@ -348,6 +348,7 @@ export class AuthController {
         id?: number;
         login?: string;
         name?: string | null;
+        avatar_url?: string;
       };
 
       const githubEmails = (await emailsResponse.json()) as Array<{
@@ -374,6 +375,8 @@ export class AuthController {
         providerId: String(githubUser.id),
         email: primaryVerifiedEmail.email,
         username: githubUser.name || githubUser.login || primaryVerifiedEmail.email,
+        avatarUrl: githubUser.avatar_url,
+        oauthAccessToken: tokenData.access_token,
       });
 
       oauthResult.match(

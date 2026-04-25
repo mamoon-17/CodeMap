@@ -16,6 +16,7 @@ export class AuthService {
     email: string;
     username: string;
     avatarUrl?: string;
+    oauthAccessToken?: string;
   }): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
 
@@ -32,6 +33,9 @@ export class AuthService {
       if (existingByProvider) {
         if (params.avatarUrl) {
           existingByProvider.avatarUrl = params.avatarUrl;
+        }
+        if (params.provider === AuthProvider.GITHUB && params.oauthAccessToken) {
+          existingByProvider.githubAccessToken = params.oauthAccessToken;
         }
         existingByProvider.lastLogin = new Date();
         const updatedUser = await repository.save(existingByProvider);
@@ -52,7 +56,18 @@ export class AuthService {
         if (params.provider === AuthProvider.GOOGLE) {
           existingByEmail.googleId = params.providerId;
         } else {
+          const linkedGithubUser = await repository.findOne({
+            where: { githubId: params.providerId },
+          });
+
+          if (linkedGithubUser && linkedGithubUser.id !== existingByEmail.id) {
+            return err("This GitHub account is already linked to another user.");
+          }
+
           existingByEmail.githubId = params.providerId;
+          if (params.oauthAccessToken) {
+            existingByEmail.githubAccessToken = params.oauthAccessToken;
+          }
         }
 
         if (params.avatarUrl) {
@@ -73,6 +88,10 @@ export class AuthService {
           params.provider === AuthProvider.GOOGLE ? params.providerId : null,
         githubId:
           params.provider === AuthProvider.GITHUB ? params.providerId : null,
+        githubAccessToken:
+          params.provider === AuthProvider.GITHUB
+            ? (params.oauthAccessToken ?? null)
+            : null,
         avatarUrl: params.avatarUrl || null,
         isGuest: false,
         lastLogin: new Date(),
