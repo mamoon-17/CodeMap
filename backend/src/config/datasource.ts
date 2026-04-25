@@ -1,6 +1,7 @@
 import { DataSource } from "typeorm";
 import { User } from "../modules/user/user.entity";
 import { Project } from "../modules/project/project.entity";
+import { RepositoryRecord } from "../modules/project/repository.entity";
 import { config } from "./config";
 import { err, ok, Result } from "neverthrow";
 
@@ -15,7 +16,7 @@ export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.SUPABASE_URI || config.getSupabaseUri(),
   ssl,
-  entities: [User, Project],
+  entities: [User, Project, RepositoryRecord],
   synchronize: true,
   dropSchema: false,
   logging: false,

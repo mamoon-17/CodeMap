@@ -2,6 +2,7 @@ import { Repository } from "typeorm";
 import { User } from "./user.entity";
 import { AppDataSource } from "../../config/datasource";
 import { Result, ok, err } from "neverthrow";
+import { RepositoryRecord } from "../project/repository.entity";
 
 export interface GithubRepository {
   id: number;
@@ -43,6 +44,10 @@ interface GithubApiRepository {
 class UserService {
   private getRepo(): Repository<User> {
     return AppDataSource.getRepository(User);
+  }
+
+  private getRepositoryRecordRepo(): Repository<RepositoryRecord> {
+    return AppDataSource.getRepository(RepositoryRecord);
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -106,6 +111,31 @@ class UserService {
     throw new Error("GitHub API request failed after retries");
   }
 
+  private async syncGithubRepositories(
+    repositories: GithubRepository[],
+  ): Promise<void> {
+    if (repositories.length === 0) return;
+
+    const repositoryRecordRepo = this.getRepositoryRecordRepo();
+
+    await repositoryRecordRepo.upsert(
+      repositories.map((repo) => ({
+        githubRepoId: String(repo.id),
+        name: repo.name,
+        fullName: repo.full_name,
+        url: repo.html_url,
+        language: repo.language,
+        size: repo.size,
+        isPrivate: repo.private,
+        isFork: repo.fork,
+        ownerLogin: repo.owner.login,
+        ownerAvatarUrl: repo.owner.avatar_url || null,
+        githubUpdatedAt: repo.updated_at ? new Date(repo.updated_at) : null,
+      })),
+      ["githubRepoId"],
+    );
+  }
+
   async createUser(userData: Partial<User>): Promise<Result<User, string>> {
     try {
       const repo = this.getRepo();
@@ -157,6 +187,8 @@ class UserService {
         collected.push(...filtered);
         nextPageUrl = this.getNextPageUrl(response.headers.get("link"));
       }
+
+      await this.syncGithubRepositories(collected);
 
       return ok(collected);
     } catch (e) {
