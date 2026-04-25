@@ -189,6 +189,7 @@ export class AuthController {
         id?: string;
         email?: string;
         name?: string;
+        picture?: string;
       };
 
       if (!profile.id || !profile.email) {
@@ -208,6 +209,7 @@ export class AuthController {
         providerId: profile.id,
         email: googleEmail,
         username: profile.name || fallbackUsername,
+        avatarUrl: profile.picture,
       });
 
       oauthResult.match(

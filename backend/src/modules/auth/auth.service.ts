@@ -15,6 +15,7 @@ export class AuthService {
     providerId: string;
     email: string;
     username: string;
+    avatarUrl?: string;
   }): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
 
@@ -29,6 +30,9 @@ export class AuthService {
       });
 
       if (existingByProvider) {
+        if (params.avatarUrl) {
+          existingByProvider.avatarUrl = params.avatarUrl;
+        }
         existingByProvider.lastLogin = new Date();
         const updatedUser = await repository.save(existingByProvider);
         return ok(updatedUser);
@@ -51,6 +55,10 @@ export class AuthService {
           existingByEmail.githubId = params.providerId;
         }
 
+        if (params.avatarUrl) {
+          existingByEmail.avatarUrl = params.avatarUrl;
+        }
+
         existingByEmail.lastLogin = new Date();
         const updatedUser = await repository.save(existingByEmail);
         return ok(updatedUser);
@@ -65,6 +73,7 @@ export class AuthService {
           params.provider === AuthProvider.GOOGLE ? params.providerId : null,
         githubId:
           params.provider === AuthProvider.GITHUB ? params.providerId : null,
+        avatarUrl: params.avatarUrl || null,
         isGuest: false,
         lastLogin: new Date(),
       });

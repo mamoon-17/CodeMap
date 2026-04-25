@@ -40,6 +40,9 @@ export class User {
   @Column({ type: "varchar", nullable: true })
   githubId: string | null;
 
+  @Column({ type: "varchar", nullable: true })
+  avatarUrl: string | null;
+
   @Column({ type: "boolean", default: false })
   isGuest: boolean;
 
