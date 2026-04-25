@@ -19,7 +19,20 @@ interface Repo {
   status: "indexed" | "processing" | "available";
   lastUpdated: string;
   files: number;
+  language?: string;
+  size?: number;
 }
+
+interface GithubRepoResponse {
+  id: number;
+  full_name: string;
+  language: string | null;
+  size: number;
+  updated_at: string;
+}
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 function mapStatus(
   backendStatus: string,
@@ -51,33 +64,55 @@ const Dashboard = () => {
     "idle" | "uploading" | "error"
   >("idle");
   const [uploadError, setUploadError] = useState("");
+  const [reposLoading, setReposLoading] = useState(true);
+  const [reposError, setReposError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("http://localhost:5000/projects")
-      .then((res) => res.json())
-      .then(
-        (
-          projects: {
-            id: string;
-            name: string;
-            status: string;
-            createdAt: string;
-            fileCount: number;
-          }[],
-        ) => {
-          setRepos(
-            projects.map((p) => ({
-              id: p.id,
-              name: p.name,
-              status: mapStatus(p.status),
-              lastUpdated: timeAgo(p.createdAt),
-              files: p.fileCount,
-            })),
-          );
-        },
-      )
-      .catch(() => {});
+    const loadRepos = async () => {
+      setReposLoading(true);
+      setReposError("");
+
+      try {
+        const token = localStorage.getItem("accessToken");
+        if (!token) {
+          throw new Error("Please login to load repositories.");
+        }
+
+        const response = await fetch(`${API_BASE_URL}/users/repos`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to load repositories");
+        }
+
+        const githubRepos = (payload.data?.repositories || []) as GithubRepoResponse[];
+
+        setRepos(
+          githubRepos.map((repo) => ({
+            id: String(repo.id),
+            name: repo.full_name,
+            status: "available",
+            lastUpdated: timeAgo(repo.updated_at),
+            files: 0,
+            language: repo.language || "Unknown",
+            size: repo.size,
+          })),
+        );
+      } catch (error) {
+        setReposError(
+          error instanceof Error ? error.message : "Failed to load repositories",
+        );
+      } finally {
+        setReposLoading(false);
+      }
+    };
+
+    void loadRepos();
   }, []);
 
   const handleAddRepo = async () => {
@@ -106,7 +141,7 @@ const Dashboard = () => {
       setShowAddModal(false);
 
       try {
-        const res = await fetch("http://localhost:5000/projects/upload", {
+        const res = await fetch(`${API_BASE_URL}/projects/upload`, {
           method: "POST",
           body: formData,
         });
@@ -254,8 +289,30 @@ const Dashboard = () => {
         </div>
 
         {/* Repo Grid */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {repos.map((repo) => (
+        {reposLoading && (
+          <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 size={16} className="animate-spin" />
+            Loading repositories...
+          </div>
+        )}
+
+        {!reposLoading && reposError && (
+          <div className="rounded-lg border border-destructive/40 bg-card p-6">
+            <p className="text-sm text-destructive">{reposError}</p>
+          </div>
+        )}
+
+        {!reposLoading && !reposError && repos.length === 0 && (
+          <div className="rounded-lg border bg-card p-6">
+            <p className="text-sm text-muted-foreground">
+              No repositories found. Connect your GitHub account and try again.
+            </p>
+          </div>
+        )}
+
+        {!reposLoading && !reposError && repos.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {repos.map((repo) => (
             <div
               key={repo.id}
               className="rounded-lg border bg-card p-4 shadow-subtle transition-shadow hover:shadow-card"
@@ -292,6 +349,12 @@ const Dashboard = () => {
                       {repo.files} files
                     </p>
                   )}
+                  {(repo.language || typeof repo.size === "number") && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {repo.language ? repo.language : "Unknown"}
+                      {typeof repo.size === "number" ? ` • ${repo.size} KB` : ""}
+                    </p>
+                  )}
                 </div>
               </div>
               {repo.status === "processing" && (
@@ -326,8 +389,9 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add Repo Modal */}
