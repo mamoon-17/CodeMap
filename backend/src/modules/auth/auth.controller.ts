@@ -248,7 +248,7 @@ export class AuthController {
     const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
     githubAuthUrl.searchParams.set("client_id", clientId);
     githubAuthUrl.searchParams.set("redirect_uri", callbackUrl);
-    githubAuthUrl.searchParams.set("scope", "read:user user:email");
+    githubAuthUrl.searchParams.set("scope", "repo read:user user:email");
     githubAuthUrl.searchParams.set("state", state);
 
     res.redirect(githubAuthUrl.toString());
