@@ -50,7 +50,7 @@ const SignUp = () => {
   const [loading, setLoading] = useState(false);
 
   const startOAuth = (provider: "google" | "github") => {
-    window.location.href = `${API_BASE_URL}/auth/${provider}`;
+    window.location.href = `${API_BASE_URL}/auth/${provider}?mode=signup`;
   };
 
   const handleSubmit = async (ev: React.FormEvent) => {
