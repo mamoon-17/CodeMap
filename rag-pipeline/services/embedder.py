@@ -49,7 +49,7 @@ try:
 except Exception:
     pass
 
-from services.chunker import chunk_file
+from services.chunker import smart_chunk_file
 
 _model: SentenceTransformer | None = None
 _chroma_client: chromadb.PersistentClient | None = None
@@ -104,7 +104,7 @@ def ingest_and_embed(
         if not replace_project:
             collection.delete(where={"file_path": file.file_path})
 
-        chunks = chunk_file(file.file_path, file.content)
+        chunks = smart_chunk_file(file.file_path, file.content)
 
         for chunk in chunks:
             embedding = model.encode(chunk["text"], show_progress_bar=False).tolist()
