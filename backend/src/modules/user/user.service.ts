@@ -148,6 +148,45 @@ class UserService {
     }
   }
 
+  async getProfile(userId: string): Promise<
+    Result<
+      {
+        id: string;
+        username: string;
+        email: string;
+        authProvider: string;
+        avatarUrl: string | null;
+        isGuest: boolean;
+        githubConnected: boolean;
+        googleConnected: boolean;
+      },
+      string
+    >
+  > {
+    try {
+      const repo = this.getRepo();
+      const user = await repo.findOne({ where: { id: userId } });
+
+      if (!user) {
+        return err("User not found");
+      }
+
+      return ok({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        authProvider: user.authProvider,
+        avatarUrl: user.avatarUrl,
+        isGuest: user.isGuest,
+        githubConnected: Boolean(user.githubId),
+        googleConnected: Boolean(user.googleId),
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to fetch user profile: ${message}`);
+    }
+  }
+
   async listGithubRepos(
     userId: string,
     options: ListGithubReposOptions = {},

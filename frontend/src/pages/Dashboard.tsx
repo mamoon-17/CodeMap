@@ -8,10 +8,10 @@ import {
   X,
   Upload,
   Github,
-  User,
-  Settings as SettingsIcon,
+  RefreshCw,
   LogOut,
 } from "lucide-react";
+import type { ProjectContextItem, UserProfile } from "@/types/api";
 
 interface Repo {
   id: string;
@@ -21,6 +21,7 @@ interface Repo {
   files: number;
   language?: string;
   size?: number;
+  source: "github" | "upload";
 }
 
 interface GithubRepoResponse {
@@ -33,6 +34,10 @@ interface GithubRepoResponse {
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
+const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
+const PROJECT_CONTEXTS_KEY = "projectContexts";
 
 function mapStatus(
   backendStatus: string,
@@ -56,6 +61,7 @@ function timeAgo(dateStr: string): string {
 const Dashboard = () => {
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repo[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -66,23 +72,65 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState("");
   const [reposLoading, setReposLoading] = useState(true);
   const [reposError, setReposError] = useState("");
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [activeProjectId, setActiveProjectId] = useState(
+    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "",
+  );
+  const [activeProjectName, setActiveProjectName] = useState(
+    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const saveProjectContext = (project: ProjectContextItem) => {
+    const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
+    const existing = raw ? (JSON.parse(raw) as ProjectContextItem[]) : [];
+    const deduped = [project, ...existing.filter((p) => p.id !== project.id)];
+    localStorage.setItem(PROJECT_CONTEXTS_KEY, JSON.stringify(deduped.slice(0, 50)));
+  };
+
+  const setActiveProject = (projectId: string, projectName: string, source: "github" | "upload") => {
+    setActiveProjectId(projectId);
+    setActiveProjectName(projectName);
+    localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
+    localStorage.setItem(ACTIVE_PROJECT_NAME_KEY, projectName);
+    saveProjectContext({ id: projectId, name: projectName, source });
+  };
+
+  const startOAuth = (provider: "google" | "github") => {
+    window.location.href = `${API_BASE_URL}/auth/${provider}`;
+  };
+
+  const authHeaders = () => {
+    const token = localStorage.getItem("accessToken");
+    return token
+      ? {
+          Authorization: `Bearer ${token}`,
+        }
+      : undefined;
+  };
+
   useEffect(() => {
-    const loadRepos = async () => {
+    const loadProfileAndRepos = async () => {
       setReposLoading(true);
+      setProfileLoading(true);
       setReposError("");
 
       try {
-        const token = localStorage.getItem("accessToken");
-        if (!token) {
+        const headers = authHeaders();
+        if (!headers) {
           throw new Error("Please login to load repositories.");
         }
 
+        const profileResponse = await fetch(`${API_BASE_URL}/users/me`, {
+          headers,
+        });
+        const profilePayload = await profileResponse.json();
+        if (profileResponse.ok) {
+          setCurrentUser(profilePayload.data as UserProfile);
+        }
+
         const response = await fetch(`${API_BASE_URL}/users/repos`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
         });
 
         const payload = await response.json();
@@ -94,13 +142,14 @@ const Dashboard = () => {
 
         setRepos(
           githubRepos.map((repo) => ({
-            id: String(repo.id),
+            id: `gh_${String(repo.id)}`,
             name: repo.full_name,
             status: "available",
             lastUpdated: timeAgo(repo.updated_at),
             files: 0,
             language: repo.language || "Unknown",
             size: repo.size,
+            source: "github",
           })),
         );
       } catch (error) {
@@ -109,10 +158,11 @@ const Dashboard = () => {
         );
       } finally {
         setReposLoading(false);
+        setProfileLoading(false);
       }
     };
 
-    void loadRepos();
+    void loadProfileAndRepos();
   }, []);
 
   const handleAddRepo = async () => {
@@ -157,10 +207,12 @@ const Dashboard = () => {
                   status: mapStatus(data.project.status),
                   lastUpdated: "Just now",
                   files: data.fileCount ?? 0,
+                  source: "upload",
                 }
               : r,
           ),
         );
+        setActiveProject(data.project.id, data.project.name, "upload");
         setUploadStatus("idle");
       } catch (e) {
         // Remove the temp card on failure and reopen modal with error
@@ -181,6 +233,7 @@ const Dashboard = () => {
         status: "processing",
         lastUpdated: "Just now",
         files: 0,
+        source: "github",
       },
     ]);
     setRepoUrl("");
@@ -188,14 +241,22 @@ const Dashboard = () => {
   };
 
   const handleConnectRepo = (repoId: string) => {
-    setRepos((prev) =>
-      prev.map((repo) =>
-        repo.id === repoId
-          ? { ...repo, status: "processing", lastUpdated: "Just now" }
-          : repo,
-      ),
-    );
+    const selectedRepo = repos.find((repo) => repo.id === repoId);
+    if (!selectedRepo) return;
+
+    setActiveProject(selectedRepo.id, selectedRepo.name, selectedRepo.source);
+    navigate("/query");
   };
+
+  const initialLetter =
+    (currentUser?.username?.trim()?.charAt(0) ||
+      currentUser?.email?.trim()?.charAt(0) ||
+      "U").toUpperCase();
+
+  const providerLabel = currentUser?.authProvider
+    ? currentUser.authProvider.charAt(0).toUpperCase() +
+      currentUser.authProvider.slice(1)
+    : "Unknown";
 
   return (
     <div className="min-h-screen bg-background">
@@ -218,10 +279,18 @@ const Dashboard = () => {
               className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary"
             >
               <span className="text-sm text-muted-foreground hidden sm:block">
-                developer@acme.dev
+                {profileLoading ? "Loading user..." : (currentUser?.email || "Unknown user")}
               </span>
               <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-xs font-medium text-primary">D</span>
+                {currentUser?.avatarUrl ? (
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt="User avatar"
+                    className="h-7 w-7 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs font-medium text-primary">{initialLetter}</span>
+                )}
               </div>
             </button>
 
@@ -233,22 +302,35 @@ const Dashboard = () => {
                 />
                 <div className="absolute right-0 top-full mt-1.5 w-48 rounded-md border bg-card shadow-lg z-50 animate-fade-in">
                   <div className="py-1">
-                    <Link
-                      to="/profile"
-                      className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
-                      onClick={() => setShowDropdown(false)}
-                    >
-                      <User size={15} />
-                      View Profile
-                    </Link>
-                    <Link
-                      to="/settings"
-                      className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
-                      onClick={() => setShowDropdown(false)}
-                    >
-                      <SettingsIcon size={15} />
-                      Settings
-                    </Link>
+                    <div className="px-3 py-2 border-b border-border/70">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {currentUser?.username || "Unknown"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {currentUser?.email || "No email"}
+                      </p>
+                      <div className="mt-1 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        Provider: {providerLabel}
+                      </div>
+                    </div>
+                    {currentUser?.authProvider === "github" && (
+                      <button
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                        onClick={() => startOAuth("github")}
+                      >
+                        <RefreshCw size={15} />
+                        Reconnect GitHub
+                      </button>
+                    )}
+                    {currentUser?.authProvider === "google" && (
+                      <button
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                        onClick={() => startOAuth("google")}
+                      >
+                        <RefreshCw size={15} />
+                        Reconnect Google
+                      </button>
+                    )}
                     <div className="my-1 h-px bg-border" />
                     <button
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-secondary transition-colors"
@@ -278,6 +360,11 @@ const Dashboard = () => {
             <p className="text-sm text-muted-foreground mt-1">
               {repos.length} repositories connected
             </p>
+            {activeProjectId && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Active project: {activeProjectName || activeProjectId}
+              </p>
+            )}
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -384,7 +471,7 @@ const Dashboard = () => {
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     <Github size={14} />
-                    Connect
+                    {activeProjectId === repo.id ? "Selected" : "Use in Query"}
                   </button>
                 </div>
               )}

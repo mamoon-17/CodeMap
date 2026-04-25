@@ -57,6 +57,39 @@ class UserController {
       next(error);
     }
   };
+
+  getProfile = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required.",
+        });
+        return;
+      }
+
+      const result = await userService.getProfile(req.user.id);
+
+      result.match(
+        (profile) => {
+          res.status(200).json({
+            success: true,
+            data: profile,
+          });
+        },
+        (error) => {
+          if (error.includes("User not found")) {
+            res.status(404).json({ success: false, error });
+            return;
+          }
+
+          next(new Error(error));
+        },
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 export const userController = new UserController();

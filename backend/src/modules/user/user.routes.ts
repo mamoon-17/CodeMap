@@ -7,6 +7,11 @@ const router = Router();
 // Public routes (no authentication required)
 router.post("/", userController.create);
 router.get(
+	"/me",
+	(req, res, next) => authMiddleware.requireAuth(req, res, next),
+	userController.getProfile,
+);
+router.get(
 	"/repos",
 	(req, res, next) => authMiddleware.requireAuth(req, res, next),
 	(req, res, next) => authMiddleware.requireNonGuest(req, res, next),
