@@ -1,11 +1,17 @@
 import { Router } from "express";
 import { userController } from "./user.controller";
-// import { authMiddleware } from "../../middleware/auth.middleware";
+import { authMiddleware } from "../../middleware/auth.middleware";
 
 const router = Router();
 
 // Public routes (no authentication required)
 router.post("/", userController.create);
+router.get(
+	"/repos",
+	(req, res, next) => authMiddleware.requireAuth(req, res, next),
+	(req, res, next) => authMiddleware.requireNonGuest(req, res, next),
+	userController.listGithubRepos,
+);
 
 // Protected routes (authentication required)
 // Example: Get current user profile
