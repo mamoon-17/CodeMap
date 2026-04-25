@@ -5,6 +5,8 @@ import { ok, err, Result } from "neverthrow";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 
+export type OAuthIntent = "login" | "signup";
+
 export class AuthService {
   private getUserRepository(): Repository<User> {
     return AppDataSource.getRepository(User);
@@ -17,8 +19,10 @@ export class AuthService {
     username: string;
     avatarUrl?: string;
     oauthAccessToken?: string;
+    intent?: OAuthIntent;
   }): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
+    const intent = params.intent || "login";
 
     try {
       const providerWhere =
@@ -31,6 +35,10 @@ export class AuthService {
       });
 
       if (existingByProvider) {
+        if (intent === "signup") {
+          return err("Account already exists. Please login instead.");
+        }
+
         if (params.avatarUrl) {
           existingByProvider.avatarUrl = params.avatarUrl;
         }
@@ -47,6 +55,10 @@ export class AuthService {
       });
 
       if (existingByEmail) {
+        if (intent === "signup") {
+          return err("Account already exists. Please login instead.");
+        }
+
         if (existingByEmail.authProvider !== params.provider) {
           return err(
             `This email is already registered with ${existingByEmail.authProvider} authentication.`,

@@ -8,7 +8,13 @@ import { AuthProvider, User } from "../user/user.entity";
 import { config } from "../../config/config";
 import crypto from "crypto";
 
+type OAuthIntent = "login" | "signup";
+
 export class AuthController {
+  private resolveOAuthIntent(value: unknown): OAuthIntent {
+    return value === "signup" ? "signup" : "login";
+  }
+
   private buildCallbackUrl(req: Request, provider: "google" | "github"): string {
     return `${req.protocol}://${req.get("host")}/auth/${provider}/callback`;
   }
@@ -89,7 +95,13 @@ export class AuthController {
     }
 
     const state = crypto.randomUUID();
+    const intent = this.resolveOAuthIntent(req.query.mode);
     res.cookie("google_oauth_state", state, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+    });
+    res.cookie("google_oauth_intent", intent, {
       httpOnly: true,
       sameSite: "lax",
       maxAge: 10 * 60 * 1000,
@@ -111,7 +123,9 @@ export class AuthController {
     const code = req.query.code;
     const state = req.query.state;
     const savedState = req.cookies?.google_oauth_state;
+    const intent = this.resolveOAuthIntent(req.cookies?.google_oauth_intent);
     res.clearCookie("google_oauth_state");
+    res.clearCookie("google_oauth_intent");
 
     if (typeof code !== "string") {
       this.redirectOAuthError(res, "google", "Missing Google authorization code");
@@ -210,6 +224,7 @@ export class AuthController {
         email: googleEmail,
         username: profile.name || fallbackUsername,
         avatarUrl: profile.picture,
+        intent,
       });
 
       oauthResult.match(
@@ -238,7 +253,13 @@ export class AuthController {
     }
 
     const state = crypto.randomUUID();
+    const intent = this.resolveOAuthIntent(req.query.mode);
     res.cookie("github_oauth_state", state, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+    });
+    res.cookie("github_oauth_intent", intent, {
       httpOnly: true,
       sameSite: "lax",
       maxAge: 10 * 60 * 1000,
@@ -258,7 +279,9 @@ export class AuthController {
     const code = req.query.code;
     const state = req.query.state;
     const savedState = req.cookies?.github_oauth_state;
+    const intent = this.resolveOAuthIntent(req.cookies?.github_oauth_intent);
     res.clearCookie("github_oauth_state");
+    res.clearCookie("github_oauth_intent");
 
     if (typeof code !== "string") {
       this.redirectOAuthError(res, "github", "Missing GitHub authorization code");
@@ -377,6 +400,7 @@ export class AuthController {
         username: githubUser.name || githubUser.login || primaryVerifiedEmail.email,
         avatarUrl: githubUser.avatar_url,
         oauthAccessToken: tokenData.access_token,
+        intent,
       });
 
       oauthResult.match(
