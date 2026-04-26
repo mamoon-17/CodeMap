@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from typing import Any
 
 
@@ -11,6 +12,52 @@ def detect_language(file_path: str) -> str:
         "java": "java", "cpp": "cpp", "cc": "cpp", "cxx": "cpp",
         "c": "c", "go": "go", "rs": "rust", "rb": "ruby", "php": "php",
     }.get(ext, "unknown")
+
+
+def chunk_js_file(file_path: str, content: str,
+                  max_chunk_size: int = 150) -> list[dict]:
+    pattern = re.compile(
+        r"^(export\s+)?(default\s+)?(async\s+)?"
+        r"(function\s+\w+|class\s+\w+|"
+        r"const\s+\w+\s*=\s*(async\s*)?\(|"
+        r"let\s+\w+\s*=\s*(async\s*)?\()",
+        re.MULTILINE
+    )
+    lines = content.splitlines(keepends=True)
+    matches = list(pattern.finditer(content))
+
+    if not matches:
+        return chunk_file(file_path, content)
+
+    char_to_line = []
+    char = 0
+    for i, line in enumerate(lines):
+        char_to_line.append(i)
+        char += len(line)
+
+    split_points = sorted(set(
+        char_to_line[min(m.start(), len(char_to_line)-1)]
+        for m in matches
+    ))
+    split_points = [0] + split_points + [len(lines)]
+
+    chunks = []
+    for i in range(len(split_points) - 1):
+        s, e = split_points[i], split_points[i+1]
+        block = "".join(lines[s:e])
+        if not block.strip():
+            continue
+        if (e - s) > max_chunk_size:
+            for sub in chunk_file(file_path, block):
+                chunks.append({**sub,
+                    "start_line": sub["start_line"] + s,
+                    "end_line": sub["end_line"] + s,
+                    "language": detect_language(file_path)})
+        else:
+            chunks.append({"text": block, "file_path": file_path,
+                "start_line": s+1, "end_line": e,
+                "language": detect_language(file_path)})
+    return chunks
 
 
 def chunk_file(file_path, content, chunk_size=100, overlap=20):
