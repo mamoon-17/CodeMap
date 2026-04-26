@@ -28,6 +28,27 @@ interface Repo {
   source: "github" | "upload";
 }
 
+type ReindexUiState =
+  | {
+      status: "idle";
+    }
+  | {
+      status: "running";
+      jobId: string;
+    }
+  | {
+      status: "completed";
+      jobId: string;
+      indexedChunks: number;
+      skippedFilesCount: number;
+      skippedFiles: Array<{ file: string; reason: string }> | null;
+    }
+  | {
+      status: "failed";
+      jobId: string;
+      error: string;
+    };
+
 interface GithubRepoResponse {
   id: number;
   full_name: string;
@@ -83,6 +104,12 @@ const Dashboard = () => {
   const [profileLoading, setProfileLoading] = useState(true);
   const [reindexingRepoId, setReindexingRepoId] = useState<string | null>(null);
   const [reindexError, setReindexError] = useState<string>("");
+  const [reindexUiByRepo, setReindexUiByRepo] = useState<
+    Record<string, ReindexUiState>
+  >({});
+  const [expandedSkipsRepoId, setExpandedSkipsRepoId] = useState<string | null>(
+    null,
+  );
   const [activeProjectId, setActiveProjectId] = useState(
     localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "",
   );
@@ -194,11 +221,20 @@ const Dashboard = () => {
 
     setReindexError("");
     setReindexingRepoId(repoId);
+    setReindexUiByRepo((prev) => ({
+      ...prev,
+      [repoId]: { status: "running", jobId: "" },
+    }));
 
     try {
       const start = await startReindex(token, { repo_id: repoId });
       const jobId = start.data?.job_id;
       if (!jobId) throw new Error("Reindex job did not return a job_id");
+
+      setReindexUiByRepo((prev) => ({
+        ...prev,
+        [repoId]: { status: "running", jobId },
+      }));
 
       // Poll job status until terminal state.
       for (let i = 0; i < 180; i += 1) {
@@ -213,9 +249,37 @@ const Dashboard = () => {
         await new Promise((r) => setTimeout(r, 2000));
       }
 
+      const finalStatus = await getReindexStatus(token, jobId);
+      if (finalStatus.data?.status !== "completed") {
+        throw new Error(finalStatus.data?.error || "Reindex failed");
+      }
+
+      setReindexUiByRepo((prev) => ({
+        ...prev,
+        [repoId]: {
+          status: "completed",
+          jobId,
+          indexedChunks: finalStatus.data?.indexed_chunks ?? 0,
+          skippedFilesCount: finalStatus.data?.skipped_files_count ?? 0,
+          skippedFiles: finalStatus.data?.skipped_files ?? null,
+        },
+      }));
+
       await loadProfileAndRepos();
     } catch (e) {
       setReindexError(e instanceof Error ? e.message : "Reindex failed");
+      const jobId =
+        reindexUiByRepo[repoId] && "jobId" in reindexUiByRepo[repoId]
+          ? (reindexUiByRepo[repoId] as any).jobId
+          : "";
+      setReindexUiByRepo((prev) => ({
+        ...prev,
+        [repoId]: {
+          status: "failed",
+          jobId,
+          error: e instanceof Error ? e.message : "Reindex failed",
+        },
+      }));
     } finally {
       setReindexingRepoId(null);
     }
@@ -569,6 +633,68 @@ const Dashboard = () => {
                         )}
                       </button>
                     )}
+
+                    {repo.source === "github" &&
+                      reindexUiByRepo[repo.id]?.status === "completed" && (
+                        <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              Indexed chunks:{" "}
+                              {(reindexUiByRepo[repo.id] as any).indexedChunks}
+                            </span>
+                            <button
+                              type="button"
+                              className="text-xs text-foreground/80 hover:text-foreground underline underline-offset-2"
+                              onClick={() =>
+                                setExpandedSkipsRepoId((prev) =>
+                                  prev === repo.id ? null : repo.id,
+                                )
+                              }
+                            >
+                              Skipped:{" "}
+                              {(reindexUiByRepo[repo.id] as any)
+                                .skippedFilesCount ?? 0}
+                            </button>
+                          </div>
+                          {expandedSkipsRepoId === repo.id && (
+                            <div className="mt-2 space-y-1">
+                              {(
+                                (reindexUiByRepo[repo.id] as any)
+                                  .skippedFiles || []
+                              ).length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  No skipped-file details (or none skipped).
+                                </p>
+                              ) : (
+                                <ul className="max-h-28 overflow-auto space-y-1 pr-1">
+                                  {(
+                                    (reindexUiByRepo[repo.id] as any)
+                                      .skippedFiles as Array<{
+                                      file: string;
+                                      reason: string;
+                                    }>
+                                  ).map((s) => (
+                                    <li key={s.file} className="font-mono">
+                                      {s.file}{" "}
+                                      <span className="text-muted-foreground">
+                                        ({s.reason})
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    {repo.source === "github" &&
+                      reindexUiByRepo[repo.id]?.status === "failed" && (
+                        <div className="mb-2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive">
+                          Re-index failed:{" "}
+                          {(reindexUiByRepo[repo.id] as any).error}
+                        </div>
+                      )}
                     <button
                       onClick={() => handleConnectRepo(repo.id)}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"

@@ -33,6 +33,25 @@ const SUPPORTED_EXTENSIONS = new Set([
 
 const MAX_FILES_PER_REINDEX = 500;
 const INGEST_BATCH_SIZE = 20;
+const MAX_FILE_BYTES = 250_000;
+const MAX_SKIPPED_FILES_LOG = 50;
+
+function isProbablyBinary(buf: Buffer): boolean {
+  // Heuristic: if the first chunk contains NUL, treat as binary.
+  // Also count control chars.
+  const sample = buf.subarray(0, Math.min(buf.length, 4096));
+  let suspicious = 0;
+  for (const b of sample) {
+    if (b === 0) return true;
+    const isAllowed =
+      b === 9 || // \t
+      b === 10 || // \n
+      b === 13 || // \r
+      (b >= 32 && b <= 126);
+    if (!isAllowed) suspicious += 1;
+  }
+  return sample.length > 0 && suspicious / sample.length > 0.2;
+}
 
 function walkDir(dir: string): string[] {
   const results: string[] = [];
@@ -107,6 +126,8 @@ export class ReindexService {
         status: ReindexJobStatus.STARTED,
         error: null,
         indexedChunks: 0,
+        skippedFilesCount: 0,
+        skippedFiles: null,
       });
       const saved = await jobRepo.save(job);
 
@@ -213,6 +234,8 @@ export class ReindexService {
       let isFirstBatch = true;
       let totalIndexedChunks = 0;
       let acceptedFiles = 0;
+      let skippedFilesCount = 0;
+      const skippedFiles: Array<{ file: string; reason: string }> = [];
       let batch: Array<{ file_path: string; content: string }> = [];
 
       const flushBatch = async () => {
@@ -234,14 +257,36 @@ export class ReindexService {
         if (acceptedFiles >= MAX_FILES_PER_REINDEX) break;
 
         const stat = fs.statSync(fullPath);
-        if (stat.size > 250_000) continue; // skip very large files
+        if (stat.size > MAX_FILE_BYTES) {
+          skippedFilesCount += 1;
+          const rel = path
+            .relative(repoRoot, fullPath)
+            .split(path.sep)
+            .join("/");
+          if (skippedFiles.length < MAX_SKIPPED_FILES_LOG) {
+            skippedFiles.push({
+              file: rel,
+              reason: `size>${MAX_FILE_BYTES} bytes`,
+            });
+          }
+          continue;
+        }
 
         const rel = path
           .relative(repoRoot, fullPath)
           .split(path.sep)
           .join("/");
 
-        const content = fs.readFileSync(fullPath, "utf8");
+        const raw = fs.readFileSync(fullPath);
+        if (isProbablyBinary(raw)) {
+          skippedFilesCount += 1;
+          if (skippedFiles.length < MAX_SKIPPED_FILES_LOG) {
+            skippedFiles.push({ file: rel, reason: "binary" });
+          }
+          continue;
+        }
+
+        const content = raw.toString("utf8");
         batch.push({ file_path: rel, content });
         acceptedFiles += 1;
 
@@ -268,6 +313,8 @@ export class ReindexService {
           status: ReindexJobStatus.COMPLETED,
           error: null,
           indexedChunks: totalIndexedChunks,
+          skippedFilesCount,
+          skippedFiles: skippedFiles.length > 0 ? skippedFiles : null,
         },
       );
     } catch (e) {

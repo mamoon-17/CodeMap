@@ -46,6 +46,8 @@ class ReindexController {
               project_id: job.projectId,
               repo_id: job.githubRepoId,
               indexed_chunks: job.indexedChunks,
+              skipped_files_count: job.skippedFilesCount,
+              skipped_files: job.skippedFiles,
               error: job.error,
               updated_at: job.updatedAt,
               created_at: job.createdAt,

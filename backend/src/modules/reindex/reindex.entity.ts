@@ -40,6 +40,12 @@ export class ReindexJob {
   @Column({ type: "int", default: 0 })
   indexedChunks: number;
 
+  @Column({ type: "int", default: 0 })
+  skippedFilesCount: number;
+
+  @Column({ type: "jsonb", nullable: true })
+  skippedFiles: Array<{ file: string; reason: string }> | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
