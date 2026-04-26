@@ -6,6 +6,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 
 from services.chunker import chunk_file
+from services.chunk_store import init_db, delete_project, delete_file, upsert_chunks
 
 _model: SentenceTransformer | None = None
 _chroma_client: chromadb.PersistentClient | None = None
@@ -44,8 +45,10 @@ def ingest_and_embed(
     replace_project: bool = False,
 ) -> dict[str, int]:
     """Chunk files, embed, and persist vectors in ChromaDB."""
+    init_db()
     if replace_project:
         _reset_project_collection(project_id)
+        delete_project(project_id)
 
     collection = get_or_create_collection(project_id)
     model = _get_model()
@@ -54,12 +57,18 @@ def ingest_and_embed(
     for file in files:
         if not replace_project:
             collection.delete(where={"file_path": file.file_path})
+            delete_file(project_id, file.file_path)
 
         chunks = chunk_file(file.file_path, file.content)
+        # Store chunk metadata in relational DB (cleanup+validation)
+        # Vector ids are deterministic and match Chroma ids below.
+        for c in chunks:
+            c["vector_id"] = f"{project_id}_{c['file_path']}_{c['start_line']}"
+        upsert_chunks(project_id, file.file_path, chunks)
 
         for chunk in chunks:
             embedding = model.encode(chunk["text"]).tolist()
-            chunk_id = f"{project_id}_{chunk['file_path']}_{chunk['start_line']}"
+            chunk_id = chunk["vector_id"]
 
             # Upsert prevents duplicate-id failures on re-ingestion.
             collection.upsert(
