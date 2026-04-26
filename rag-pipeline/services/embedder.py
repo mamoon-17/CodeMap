@@ -64,7 +64,8 @@ _chroma_client: chromadb.PersistentClient | None = None
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        _model = SentenceTransformer(model_name)
     return _model
 
 
