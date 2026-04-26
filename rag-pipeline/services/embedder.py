@@ -108,11 +108,13 @@ def ingest_and_embed(
     skipped_count = 0
 
     for file in files:
+        file_hash = compute_file_hash(file.content)
+
         existing = collection.get(where={"file_path": file.file_path}, limit=1)
         existing_metas = existing.get("metadatas") or []
         if existing_metas:
             existing_hash = (existing_metas[0] or {}).get("file_hash")
-            if existing_hash == compute_file_hash(file.content):
+            if existing_hash == file_hash:
                 skipped_count += 1
                 continue
 
@@ -136,7 +138,7 @@ def ingest_and_embed(
                         "start_line": chunk["start_line"],
                         "end_line": chunk["end_line"],
                         "project_id": project_id,
-                        "file_hash": compute_file_hash(file.content),
+                        "file_hash": file_hash,
                     }
                 ],
             )
