@@ -125,6 +125,7 @@ def smart_chunk_file(
                 "file_path": file_path,
                 "start_line": gap_start,
                 "end_line": gap_end_exclusive - 1,
+                "language": detect_language(file_path),
             })
 
     for start_line, end_line in structural_spans:
@@ -143,6 +144,7 @@ def smart_chunk_file(
                     "file_path": file_path,
                     "start_line": sub["start_line"] + start_line - 1,
                     "end_line": sub["end_line"] + start_line - 1,
+                    "language": detect_language(file_path),
                 })
         else:
             chunks.append({
@@ -150,6 +152,7 @@ def smart_chunk_file(
                 "file_path": file_path,
                 "start_line": start_line,
                 "end_line": end_line,
+                "language": detect_language(file_path),
             })
 
         cursor = end_line + 1
