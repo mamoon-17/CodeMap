@@ -21,6 +21,7 @@ class EmbeddingService:
         query_text: str,
         top_k: int,
         project_id: str,
+        language: str | None = None,
     ) -> list[Chunk]:
         """
         Retrieve relevant code chunks for a query
@@ -29,18 +30,21 @@ class EmbeddingService:
             query_text: Search query
             top_k: Number of chunks to return
             project_id: Project identifier used to scope retrieval
+            language: Optional language filter (e.g. "python", "javascript")
             
         Returns:
             List of relevant code chunks
         """
         logger.info(
-            f"Retrieving chunks for project '{project_id}' query: '{query_text}' (top_k={top_k})"
+            f"Retrieving chunks for project '{project_id}' query: '{query_text}' "
+            f"(top_k={top_k}, language={language})"
         )
 
         raw_matches = retrieve_similar_chunks(
             query_text=query_text,
             top_k=top_k,
             project_id=project_id,
+            language=language,
         )
         chunks = []
         for raw in raw_matches:
