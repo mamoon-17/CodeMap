@@ -47,7 +47,8 @@ def chunk_file(file_path, content, chunk_size=100, overlap=20):
                 "text": chunk_text,
                 "file_path": file_path,
                 "start_line": start + 1,
-                "end_line": end
+                "end_line": end,
+                "language": detect_language(file_path)
             })
 
         overlap_start = end - overlap
