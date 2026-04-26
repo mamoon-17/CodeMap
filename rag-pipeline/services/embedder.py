@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 import chromadb
+import logging
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sentence_transformers import SentenceTransformer
 
 from services.chunker import chunk_file
@@ -10,6 +14,10 @@ from services.chunk_store import init_db, delete_project, delete_file, upsert_ch
 
 _model: SentenceTransformer | None = None
 _chroma_client: chromadb.PersistentClient | None = None
+logger = logging.getLogger(__name__)
+
+EMBED_BATCH_SIZE = 32
+CHUNK_WORKERS = max(2, min(4, (os.cpu_count() or 2)))
 
 
 def _get_model() -> SentenceTransformer:
@@ -45,47 +53,107 @@ def ingest_and_embed(
     replace_project: bool = False,
 ) -> dict[str, int]:
     """Chunk files, embed, and persist vectors in ChromaDB."""
+    t0 = time.perf_counter()
     init_db()
     if replace_project:
         _reset_project_collection(project_id)
         delete_project(project_id)
 
     collection = get_or_create_collection(project_id)
+    t_model0 = time.perf_counter()
     model = _get_model()
+    t_model = time.perf_counter() - t_model0
     total_chunks = 0
+    file_count = 0
+    t_chunk = 0.0
+    t_chunk_store = 0.0
+    t_embed = 0.0
+    t_upsert = 0.0
 
-    for file in files:
+    # Materialize iterable once (FastAPI gives a list, but this keeps types simple)
+    files_list = list(files)
+    file_count = len(files_list)
+
+    # Chunk files in parallel (I/O + string splitting). Keep embedding/upsert single-stream.
+    t1 = time.perf_counter()
+    chunk_results: list[tuple[str, list[dict[str, Any]]]] = []
+    with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as ex:
+        futures = {
+            ex.submit(chunk_file, f.file_path, f.content): f.file_path for f in files_list
+        }
+        for fut in as_completed(futures):
+            file_path = futures[fut]
+            chunks = fut.result()
+            chunk_results.append((file_path, chunks))
+    t_chunk += time.perf_counter() - t1
+
+    # Keep original file order for deterministic indexing (optional)
+    by_path = {p: c for (p, c) in chunk_results}
+    ordered_paths = [f.file_path for f in files_list]
+
+    for file_path in ordered_paths:
+        chunks = by_path.get(file_path, [])
         if not replace_project:
-            collection.delete(where={"file_path": file.file_path})
-            delete_file(project_id, file.file_path)
+            collection.delete(where={"file_path": file_path})
+            delete_file(project_id, file_path)
 
-        chunks = chunk_file(file.file_path, file.content)
+        if not chunks:
+            continue
+
         # Store chunk metadata in relational DB (cleanup+validation)
         # Vector ids are deterministic and match Chroma ids below.
         for c in chunks:
             c["vector_id"] = f"{project_id}_{c['file_path']}_{c['start_line']}"
-        upsert_chunks(project_id, file.file_path, chunks)
+        tcs0 = time.perf_counter()
+        upsert_chunks(project_id, file_path, chunks)
+        t_chunk_store += time.perf_counter() - tcs0
 
-        for chunk in chunks:
-            embedding = model.encode(chunk["text"]).tolist()
-            chunk_id = chunk["vector_id"]
+        texts = [c["text"] for c in chunks]
+        ids = [c["vector_id"] for c in chunks]
+        metadatas = [
+            {
+                "file_path": c["file_path"],
+                "start_line": c["start_line"],
+                "end_line": c["end_line"],
+                "project_id": project_id,
+            }
+            for c in chunks
+        ]
 
-            # Upsert prevents duplicate-id failures on re-ingestion.
-            collection.upsert(
-                ids=[chunk_id],
-                embeddings=[embedding],
-                documents=[chunk["text"]],
-                metadatas=[
-                    {
-                        "file_path": chunk["file_path"],
-                        "start_line": chunk["start_line"],
-                        "end_line": chunk["end_line"],
-                        "project_id": project_id,
-                    }
-                ],
-            )
-            total_chunks += 1
+        t2 = time.perf_counter()
+        embeddings = model.encode(
+            texts,
+            batch_size=EMBED_BATCH_SIZE,
+            show_progress_bar=False,
+        ).tolist()
+        t_embed += time.perf_counter() - t2
 
+        t3 = time.perf_counter()
+        collection.upsert(
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+        t_upsert += time.perf_counter() - t3
+
+        total_chunks += len(chunks)
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "ingest_and_embed project=%s files=%d chunks=%d replace=%s elapsed=%.2fs (model=%.2fs chunk=%.2fs chunkdb=%.2fs embed=%.2fs upsert=%.2fs workers=%d)",
+        project_id,
+        file_count,
+        total_chunks,
+        replace_project,
+        elapsed,
+        t_model,
+        t_chunk,
+        t_chunk_store,
+        t_embed,
+        t_upsert,
+        CHUNK_WORKERS,
+    )
     return {"indexed": total_chunks}
 
 
