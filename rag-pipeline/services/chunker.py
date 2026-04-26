@@ -1,21 +1,16 @@
-"""Code chunking utilities for splitting source files into retrieval chunks.
-
-Two strategies are supported:
-
-- chunk_file: a naive line-window chunker. Language-agnostic, fast, and the
-  historical behavior of the pipeline. Splits anywhere — a function can be
-  cut in the middle.
-
-- smart_chunk_file: a structure-aware chunker that, for Python files, uses the
-  ``ast`` module to slice along function and class boundaries so each chunk is
-  a complete semantic unit. It falls back to ``chunk_file`` for non-Python
-  files, unparseable Python, files with no top-level defs/classes, and for any
-  individual function/class whose body exceeds ``max_chunk_size`` lines.
-"""
 from __future__ import annotations
 
 import ast
 from typing import Any
+
+
+def detect_language(file_path: str) -> str:
+    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+    return {
+        "py": "python", "js": "javascript", "ts": "typescript",
+        "java": "java", "cpp": "cpp", "cc": "cpp", "cxx": "cpp",
+        "c": "c", "go": "go", "rs": "rust", "rb": "ruby", "php": "php",
+    }.get(ext, "unknown")
 
 
 def chunk_file(file_path, content, chunk_size=100, overlap=20):
@@ -79,11 +74,7 @@ def smart_chunk_file(
     content: str,
     max_chunk_size: int = 150,
 ) -> list[dict[str, Any]]:
-    """Structure-aware chunker for Python; line-window chunker for everything else.
 
-    Each returned chunk has the same shape as ``chunk_file`` output:
-    ``{"text", "file_path", "start_line", "end_line"}`` with 1-indexed line numbers.
-    """
     # Non-Python files have no AST to leverage, so reuse the existing chunker.
     if not file_path.endswith(".py"):
         return chunk_file(file_path, content)
