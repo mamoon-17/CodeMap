@@ -157,6 +157,7 @@ def retrieve_similar_chunks(
     query_text: str,
     top_k: int,
     project_id: str | None = None,
+    language: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks from one project or across all project collections."""
     client = _get_chroma_client()
