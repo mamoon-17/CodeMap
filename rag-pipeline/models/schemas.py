@@ -33,6 +33,23 @@ class QueryRequest(BaseModel):
             raise ValueError("project_id is required")
         return v.strip()
 
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str | None) -> str | None:
+        """Normalize and validate the optional language filter."""
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        if not normalized:
+            return None
+        allowed = {
+            "python", "javascript", "typescript", "java", "cpp", "c",
+            "go", "rust", "ruby", "php", "unknown",
+        }
+        if normalized not in allowed:
+            raise ValueError("unsupported language filter")
+        return normalized
+
 
 class SourceChunk(BaseModel):
     """Source code chunk in response"""
