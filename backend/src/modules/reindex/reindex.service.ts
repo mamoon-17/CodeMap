@@ -37,6 +37,10 @@ const MAX_FILE_BYTES = 250_000;
 const MAX_SKIPPED_FILES_LOG = 50;
 const MAX_RETRIES = 3;
 
+// Prevent duplicate job creation when multiple tabs click "Re-index" simultaneously.
+// This is a best-effort single-instance lock (sufficient for local dev).
+const startJobLocks = new Map<string, Promise<ReindexJob>>();
+
 async function withRetry<T>(
   label: string,
   fn: () => Promise<T>,
@@ -139,24 +143,52 @@ export class ReindexService {
       const projectId = `gh_${githubRepoId}`;
 
       const jobRepo = AppDataSource.getRepository(ReindexJob);
-      const job = jobRepo.create({
-        userId,
-        githubRepoId,
-        projectId,
-        status: ReindexJobStatus.STARTED,
-        error: null,
-        indexedChunks: 0,
-        skippedFilesCount: 0,
-        skippedFiles: null,
-      });
-      const saved = await jobRepo.save(job);
 
-      // Fire-and-forget background execution
-      void this.runJob(saved.id).catch((e) => {
-        console.error("[reindex] job crashed:", e);
-      });
+      const lockKey = `${userId}:${githubRepoId}`;
+      const inFlight = startJobLocks.get(lockKey);
+      if (inFlight) {
+        return ok(await inFlight);
+      }
 
-      return ok(saved);
+      const startPromise = (async () => {
+        // Prevent duplicate indexing: if a job is already running for this repo+user,
+        // return the existing job instead of starting another one.
+        const existing = await jobRepo.findOne({
+          where: {
+            userId,
+            githubRepoId,
+            status: ReindexJobStatus.STARTED,
+          },
+          order: { createdAt: "DESC" },
+        });
+        if (existing) return existing;
+
+        const job = jobRepo.create({
+          userId,
+          githubRepoId,
+          projectId,
+          status: ReindexJobStatus.STARTED,
+          error: null,
+          indexedChunks: 0,
+          skippedFilesCount: 0,
+          skippedFiles: null,
+        });
+        const saved = await jobRepo.save(job);
+
+        // Fire-and-forget background execution
+        void this.runJob(saved.id).catch((e) => {
+          console.error("[reindex] job crashed:", e);
+        });
+
+        return saved;
+      })();
+
+      startJobLocks.set(lockKey, startPromise);
+      try {
+        return ok(await startPromise);
+      } finally {
+        startJobLocks.delete(lockKey);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to start reindex: ${message}`);
