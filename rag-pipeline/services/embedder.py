@@ -170,16 +170,29 @@ def retrieve_similar_chunks(
     else:
         collections = client.list_collections()
 
+    where: dict = {}
+    if project_id and language:
+        where = {"$and": [{"project_id": project_id},
+                          {"language": language}]}
+    elif project_id:
+        where = {"project_id": project_id}
+    elif language:
+        where = {"language": language}
+
     matches: list[dict[str, Any]] = []
     for collection in collections:
         if hasattr(collection, "count") and collection.count() == 0:
             continue
 
-        result = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs: dict[str, Any] = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            query_kwargs["where"] = where
+
+        result = collection.query(**query_kwargs)
 
         ids = result.get("ids", [[]])[0]
         docs = result.get("documents", [[]])[0]
