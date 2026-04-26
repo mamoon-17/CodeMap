@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 
@@ -50,6 +51,11 @@ except Exception:
     pass
 
 from services.chunker import smart_chunk_file
+
+
+def compute_file_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
 
 _model: SentenceTransformer | None = None
 _chroma_client: chromadb.PersistentClient | None = None
