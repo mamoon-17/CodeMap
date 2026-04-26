@@ -15,6 +15,7 @@ class QueryRequest(BaseModel):
         description="Number of code chunks to retrieve",
     )
     project_id: str = Field(..., min_length=1, description="Project identifier for scoped retrieval")
+    language: str | None = None
     
     @field_validator("query")
     @classmethod
