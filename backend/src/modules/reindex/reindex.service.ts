@@ -7,7 +7,12 @@ import { AppDataSource } from "../../config/datasource";
 import { User } from "../user/user.entity";
 import { RepositoryRecord } from "../project/repository.entity";
 import { queryService } from "../query/query.service";
-import { ReindexJob, ReindexJobStatus } from "./reindex.entity";
+import {
+  ReindexJob,
+  ReindexJobStatus,
+  type ReindexLogEntry,
+  type ReindexLogLevel,
+} from "./reindex.entity";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".js",
@@ -36,10 +41,28 @@ const INGEST_BATCH_SIZE = 20;
 const MAX_FILE_BYTES = 250_000;
 const MAX_SKIPPED_FILES_LOG = 50;
 const MAX_RETRIES = 3;
+const MAX_JOB_LOGS = 200;
 
 // Prevent duplicate job creation when multiple tabs click "Re-index" simultaneously.
 // This is a best-effort single-instance lock (sufficient for local dev).
 const startJobLocks = new Map<string, Promise<ReindexJob>>();
+
+function appendLog(
+  existing: ReindexLogEntry[] | null | undefined,
+  level: ReindexLogLevel,
+  message: string,
+): ReindexLogEntry[] {
+  const next = [
+    ...(existing || []),
+    { ts: new Date().toISOString(), level, message },
+  ];
+  return next.slice(-MAX_JOB_LOGS);
+}
+
+function toUserSafeError(message: string): string {
+  // Keep errors user-friendly (no huge blobs)
+  return message.length > 500 ? message.slice(0, 500) + "…" : message;
+}
 
 async function withRetry<T>(
   label: string,
@@ -168,10 +191,19 @@ export class ReindexService {
           githubRepoId,
           projectId,
           status: ReindexJobStatus.STARTED,
+          lastStep: "started",
           error: null,
+          stackTrace: null,
           indexedChunks: 0,
           skippedFilesCount: 0,
           skippedFiles: null,
+          logs: [
+            {
+              ts: new Date().toISOString(),
+              level: "info",
+              message: `Reindex started for repo ${githubRepoId}`,
+            },
+          ],
         });
         const saved = await jobRepo.save(job);
 
@@ -215,19 +247,38 @@ export class ReindexService {
     const job = await jobRepo.findOne({ where: { id: jobId } });
     if (!job) return;
 
-    const user = await userRepo.findOne({ where: { id: job.userId } });
-    if (!user?.githubAccessToken) {
+    const log = async (level: ReindexLogLevel, message: string, step?: string) => {
+      const current = await jobRepo.findOne({ where: { id: jobId } });
+      const logs = appendLog(current?.logs, level, message);
       await jobRepo.update(
         { id: jobId },
-        { status: ReindexJobStatus.FAILED, error: "GitHub not connected" },
+        {
+          logs,
+          ...(step ? { lastStep: step } : {}),
+        },
+      );
+    };
+
+    const user = await userRepo.findOne({ where: { id: job.userId } });
+    if (!user?.githubAccessToken) {
+      await log("error", "GitHub not connected", "failed");
+      await jobRepo.update(
+        { id: jobId },
+        {
+          status: ReindexJobStatus.FAILED,
+          error: "GitHub not connected",
+        },
       );
       return;
     }
+
+    await log("info", "Resolved user token", "auth_ok");
 
     const record = await repoRecordRepo.findOne({
       where: { githubRepoId: job.githubRepoId },
     });
     if (!record?.fullName) {
+      await log("error", "Repository record missing; sync repos first", "failed");
       await jobRepo.update(
         { id: jobId },
         {
@@ -237,6 +288,8 @@ export class ReindexService {
       );
       return;
     }
+
+    await log("info", `Downloading zipball for ${record.fullName}`, "download_zipball");
 
     const tmpBase = await fs.promises.mkdtemp(
       path.join(os.tmpdir(), "codemap-reindex-"),
@@ -268,6 +321,8 @@ export class ReindexService {
       const arrayBuffer = await response.arrayBuffer();
       await fs.promises.writeFile(zipPath, Buffer.from(arrayBuffer));
 
+      await log("info", "Zipball downloaded", "extract_zip");
+
       const zip = new AdmZip(zipPath);
       safeExtractZip(zip, extractPath);
 
@@ -283,6 +338,8 @@ export class ReindexService {
         throw new Error("No supported files found to ingest");
       }
 
+      await log("info", `Discovered ${filePaths.length} candidate files`, "ingest_batches");
+
       // Stream/iterate through repo files in small batches to keep memory low.
       // First batch uses replace_project=true (fresh reindex). Remaining batches append.
       let isFirstBatch = true;
@@ -294,6 +351,7 @@ export class ReindexService {
 
       const flushBatch = async () => {
         if (batch.length === 0) return;
+        await log("info", `Ingesting batch of ${batch.length} files`, "ingest_batch");
         const ingestResult = await withRetry("ingest batch", async () =>
           queryService.ingestCodebase({
             project_id: job.projectId,
@@ -358,16 +416,23 @@ export class ReindexService {
       }
 
       // Persist sync-state in RepositoryRecord (for Dashboard change detection)
+      await log("info", "Updating repository sync state", "finalize");
       await repoRecordRepo.update(
         { githubRepoId: job.githubRepoId },
         { lastIndexedAt: new Date(), needsReindex: false },
       );
 
+      await log(
+        "info",
+        `Reindex completed. indexedChunks=${totalIndexedChunks}, skippedFiles=${skippedFilesCount}`,
+        "completed",
+      );
       await jobRepo.update(
         { id: jobId },
         {
           status: ReindexJobStatus.COMPLETED,
           error: null,
+          stackTrace: null,
           indexedChunks: totalIndexedChunks,
           skippedFilesCount,
           skippedFiles: skippedFiles.length > 0 ? skippedFiles : null,
@@ -375,9 +440,15 @@ export class ReindexService {
       );
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      const stack = e instanceof Error ? e.stack : null;
+      await log("error", `Reindex failed: ${toUserSafeError(message)}`, "failed");
       await jobRepo.update(
         { id: jobId },
-        { status: ReindexJobStatus.FAILED, error: message },
+        {
+          status: ReindexJobStatus.FAILED,
+          error: toUserSafeError(message),
+          stackTrace: stack,
+        },
       );
     } finally {
       try {
