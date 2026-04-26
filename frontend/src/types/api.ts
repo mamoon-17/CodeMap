@@ -43,7 +43,12 @@ export interface ReindexStatusResponse {
     project_id: string;
     repo_id: string;
     indexed_chunks: number;
+    skipped_files_count?: number;
+    skipped_files?: Array<{ file: string; reason: string }> | null;
+    last_step?: string;
+    logs?: Array<{ ts: string; level: "info" | "warn" | "error"; message: string }> | null;
     error: string | null;
+    stack_trace?: string | null;
     updated_at: string;
     created_at: string;
   };

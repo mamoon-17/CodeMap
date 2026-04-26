@@ -35,6 +35,8 @@ type ReindexUiState =
   | {
       status: "running";
       jobId: string;
+      lastStep?: string;
+      lastMessage?: string;
     }
   | {
       status: "completed";
@@ -47,6 +49,7 @@ type ReindexUiState =
       status: "failed";
       jobId: string;
       error: string;
+      lastStep?: string;
     };
 
 interface GithubRepoResponse {
@@ -241,6 +244,20 @@ const Dashboard = () => {
         // eslint-disable-next-line no-await-in-loop
         const status = await getReindexStatus(token, jobId);
         const st = status.data?.status;
+        const lastStep = status.data?.last_step;
+        const logs = status.data?.logs || null;
+        const lastMessage =
+          logs && logs.length > 0 ? logs[logs.length - 1]?.message : undefined;
+
+        setReindexUiByRepo((prev) => ({
+          ...prev,
+          [repoId]: {
+            status: "running",
+            jobId,
+            lastStep,
+            lastMessage,
+          },
+        }));
         if (st === "completed") break;
         if (st === "failed") {
           throw new Error(status.data?.error || "Reindex failed");
@@ -635,6 +652,25 @@ const Dashboard = () => {
                         )}
                       </button>
                     )}
+
+                    {repo.source === "github" &&
+                      reindexUiByRepo[repo.id]?.status === "running" && (
+                        <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin" />
+                            <span className="truncate">
+                              {(reindexUiByRepo[repo.id] as any).lastStep
+                                ? `Step: ${(reindexUiByRepo[repo.id] as any).lastStep}`
+                                : "Indexing…"}
+                            </span>
+                          </div>
+                          {(reindexUiByRepo[repo.id] as any).lastMessage && (
+                            <p className="mt-1 font-mono text-[11px] text-muted-foreground truncate">
+                              {(reindexUiByRepo[repo.id] as any).lastMessage}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                     {repo.source === "github" &&
                       reindexUiByRepo[repo.id]?.status === "completed" && (
