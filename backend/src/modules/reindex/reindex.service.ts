@@ -35,6 +35,26 @@ const MAX_FILES_PER_REINDEX = 500;
 const INGEST_BATCH_SIZE = 20;
 const MAX_FILE_BYTES = 250_000;
 const MAX_SKIPPED_FILES_LOG = 50;
+const MAX_RETRIES = 3;
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  maxRetries: number = MAX_RETRIES,
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (e) {
+      attempt += 1;
+      if (attempt > maxRetries) throw e;
+      const waitMs = Math.min(10_000, 500 * 2 ** (attempt - 1));
+      console.warn(`[reindex] ${label} failed (attempt ${attempt}/${maxRetries}). Retrying in ${waitMs}ms`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
 
 function isProbablyBinary(buf: Buffer): boolean {
   // Heuristic: if the first chunk contains NUL, treat as binary.
@@ -195,21 +215,23 @@ export class ReindexService {
     try {
       // Download repo zipball
       const zipballUrl = `https://api.github.com/repos/${record.fullName}/zipball`;
-      const response = await fetch(zipballUrl, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${user.githubAccessToken}`,
-          "User-Agent": "CodeMap",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
+      const response = await withRetry("download zipball", async () => {
+        const res = await fetch(zipballUrl, {
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${user.githubAccessToken}`,
+            "User-Agent": "CodeMap",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(
+            `GitHub zipball failed (${res.status}): ${body || res.statusText}`,
+          );
+        }
+        return res;
       });
-
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(
-          `GitHub zipball failed (${response.status}): ${body || response.statusText}`,
-        );
-      }
 
       const arrayBuffer = await response.arrayBuffer();
       await fs.promises.writeFile(zipPath, Buffer.from(arrayBuffer));
@@ -240,11 +262,13 @@ export class ReindexService {
 
       const flushBatch = async () => {
         if (batch.length === 0) return;
-        const ingestResult = await queryService.ingestCodebase({
-          project_id: job.projectId,
-          files: batch,
-          replace_project: isFirstBatch,
-        });
+        const ingestResult = await withRetry("ingest batch", async () =>
+          queryService.ingestCodebase({
+            project_id: job.projectId,
+            files: batch,
+            replace_project: isFirstBatch,
+          }),
+        );
         if (ingestResult.isErr()) {
           throw new Error(ingestResult.error);
         }
