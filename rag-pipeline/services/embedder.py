@@ -105,8 +105,17 @@ def ingest_and_embed(
     collection = get_or_create_collection(project_id)
     model = _get_model()
     total_chunks = 0
+    skipped_count = 0
 
     for file in files:
+        existing = collection.get(where={"file_path": file.file_path}, limit=1)
+        existing_metas = existing.get("metadatas") or []
+        if existing_metas:
+            existing_hash = (existing_metas[0] or {}).get("file_hash")
+            if existing_hash == compute_file_hash(file.content):
+                skipped_count += 1
+                continue
+
         if not replace_project:
             collection.delete(where={"file_path": file.file_path})
 
@@ -133,7 +142,7 @@ def ingest_and_embed(
             )
             total_chunks += 1
 
-    return {"indexed": total_chunks}
+    return {"indexed": total_chunks, "skipped_files": skipped_count}
 
 
 def retrieve_similar_chunks(
