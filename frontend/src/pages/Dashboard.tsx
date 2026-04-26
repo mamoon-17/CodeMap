@@ -618,17 +618,19 @@ const Dashboard = () => {
                         onClick={() => handleReindexFullRepo(repo.id)}
                         disabled={reindexingRepoId === repo.id}
                         className="mb-2 inline-flex w-full items-center justify-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-60"
-                        title="Re-index full repository"
+                        title={
+                          repo.lastIndexedAt ? "Re-index full repository" : "Index full repository"
+                        }
                       >
                         {reindexingRepoId === repo.id ? (
                           <>
                             <Loader2 size={14} className="animate-spin" />
-                            Re-indexing…
+                            {repo.lastIndexedAt ? "Re-indexing…" : "Indexing…"}
                           </>
                         ) : (
                           <>
                             <RefreshCw size={14} />
-                            Re-index
+                            {repo.lastIndexedAt ? "Re-index" : "Index"}
                           </>
                         )}
                       </button>
@@ -697,6 +699,7 @@ const Dashboard = () => {
                       )}
                     <button
                       onClick={() => handleConnectRepo(repo.id)}
+                      disabled={reindexingRepoId === repo.id}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
                       <Github size={14} />
