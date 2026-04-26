@@ -64,6 +64,10 @@ _chroma_client: chromadb.PersistentClient | None = None
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
+        # Available models — set EMBEDDING_MODEL in .env to switch:
+        # all-MiniLM-L6-v2  — 22MB, fastest, 384 dims (default)
+        # all-MiniLM-L12-v2 — 33MB, slightly slower, better accuracy
+        # all-mpnet-base-v2  — 420MB, slowest, 768 dims, best accuracy
         model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
         _model = SentenceTransformer(model_name)
     return _model
