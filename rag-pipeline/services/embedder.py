@@ -127,6 +127,7 @@ def ingest_and_embed(
                         "start_line": chunk["start_line"],
                         "end_line": chunk["end_line"],
                         "project_id": project_id,
+                        "file_hash": compute_file_hash(file.content),
                     }
                 ],
             )
