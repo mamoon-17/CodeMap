@@ -18,6 +18,7 @@ export interface GithubRepository {
     avatar_url: string;
   };
   updated_at: string;
+  pushed_at: string | null;
 }
 
 export interface GithubRepositoryWithSyncState extends GithubRepository {
@@ -45,9 +46,15 @@ interface GithubApiRepository {
     avatar_url: string;
   };
   updated_at: string;
+  pushed_at: string | null;
 }
 
 class UserService {
+  private getRepoChangeTimestamp(repo: { pushed_at?: string | null; updated_at?: string | null }): Date | null {
+    const raw = repo.pushed_at || repo.updated_at || null;
+    return raw ? new Date(raw) : null;
+  }
+
   private hasRepoChanged(
     githubUpdatedAt: Date | null,
     lastIndexedAt: Date | null,
@@ -157,10 +164,11 @@ class UserService {
         ownerLogin: repo.owner.login,
         ownerAvatarUrl: repo.owner.avatar_url || null,
         githubUpdatedAt: repo.updated_at ? new Date(repo.updated_at) : null,
+        githubPushedAt: repo.pushed_at ? new Date(repo.pushed_at) : null,
         lastIndexedAt:
           existingByGithubId.get(String(repo.id))?.lastIndexedAt || null,
         needsReindex: this.hasRepoChanged(
-          repo.updated_at ? new Date(repo.updated_at) : null,
+          this.getRepoChangeTimestamp(repo),
           existingByGithubId.get(String(repo.id))?.lastIndexedAt || null,
         ),
       })),
@@ -278,9 +286,7 @@ class UserService {
 
       const repositoriesWithState = collected.map((repoItem) => {
         const stored = storedByGithubId.get(String(repoItem.id));
-        const githubUpdatedAt = repoItem.updated_at
-          ? new Date(repoItem.updated_at)
-          : null;
+        const githubUpdatedAt = this.getRepoChangeTimestamp(repoItem);
         const lastIndexedAt = stored?.lastIndexedAt || null;
         const hasChanges = this.hasRepoChanged(githubUpdatedAt, lastIndexedAt);
 

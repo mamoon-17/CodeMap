@@ -33,6 +33,7 @@ interface GithubRepoResponse {
   language: string | null;
   size: number;
   updated_at: string;
+  pushed_at: string | null;
   last_indexed_at: string | null;
   has_changes: boolean;
   needs_reindex: boolean;
@@ -159,7 +160,7 @@ const Dashboard = () => {
             id: `gh_${String(repo.id)}`,
             name: repo.full_name,
             status: "available",
-            lastUpdated: timeAgo(repo.updated_at),
+            lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
             lastIndexedAt: repo.last_indexed_at,
             hasChanges: repo.has_changes,
             needsReindex: repo.needs_reindex,
