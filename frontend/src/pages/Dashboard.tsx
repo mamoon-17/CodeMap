@@ -18,6 +18,9 @@ interface Repo {
   name: string;
   status: "indexed" | "processing" | "available";
   lastUpdated: string;
+  lastIndexedAt: string | null;
+  hasChanges: boolean;
+  needsReindex: boolean;
   files: number;
   language?: string;
   size?: number;
@@ -30,6 +33,9 @@ interface GithubRepoResponse {
   language: string | null;
   size: number;
   updated_at: string;
+  last_indexed_at: string | null;
+  has_changes: boolean;
+  needs_reindex: boolean;
 }
 
 const API_BASE_URL =
@@ -85,10 +91,17 @@ const Dashboard = () => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
     const existing = raw ? (JSON.parse(raw) as ProjectContextItem[]) : [];
     const deduped = [project, ...existing.filter((p) => p.id !== project.id)];
-    localStorage.setItem(PROJECT_CONTEXTS_KEY, JSON.stringify(deduped.slice(0, 50)));
+    localStorage.setItem(
+      PROJECT_CONTEXTS_KEY,
+      JSON.stringify(deduped.slice(0, 50)),
+    );
   };
 
-  const setActiveProject = (projectId: string, projectName: string, source: "github" | "upload") => {
+  const setActiveProject = (
+    projectId: string,
+    projectName: string,
+    source: "github" | "upload",
+  ) => {
     setActiveProjectId(projectId);
     setActiveProjectName(projectName);
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
@@ -138,7 +151,8 @@ const Dashboard = () => {
           throw new Error(payload.error || "Failed to load repositories");
         }
 
-        const githubRepos = (payload.data?.repositories || []) as GithubRepoResponse[];
+        const githubRepos = (payload.data?.repositories ||
+          []) as GithubRepoResponse[];
 
         setRepos(
           githubRepos.map((repo) => ({
@@ -146,6 +160,9 @@ const Dashboard = () => {
             name: repo.full_name,
             status: "available",
             lastUpdated: timeAgo(repo.updated_at),
+            lastIndexedAt: repo.last_indexed_at,
+            hasChanges: repo.has_changes,
+            needsReindex: repo.needs_reindex,
             files: 0,
             language: repo.language || "Unknown",
             size: repo.size,
@@ -154,7 +171,9 @@ const Dashboard = () => {
         );
       } catch (error) {
         setReposError(
-          error instanceof Error ? error.message : "Failed to load repositories",
+          error instanceof Error
+            ? error.message
+            : "Failed to load repositories",
         );
       } finally {
         setReposLoading(false);
@@ -184,6 +203,9 @@ const Dashboard = () => {
           name: projectName,
           status: "processing",
           lastUpdated: "Just now",
+          lastIndexedAt: null,
+          hasChanges: false,
+          needsReindex: false,
           files: 0,
         },
       ]);
@@ -206,6 +228,9 @@ const Dashboard = () => {
                   name: data.project.name,
                   status: mapStatus(data.project.status),
                   lastUpdated: "Just now",
+                  lastIndexedAt: new Date().toISOString(),
+                  hasChanges: false,
+                  needsReindex: false,
                   files: data.fileCount ?? 0,
                   source: "upload",
                 }
@@ -232,6 +257,9 @@ const Dashboard = () => {
         name: name || "new/repository",
         status: "processing",
         lastUpdated: "Just now",
+        lastIndexedAt: null,
+        hasChanges: false,
+        needsReindex: false,
         files: 0,
         source: "github",
       },
@@ -248,10 +276,11 @@ const Dashboard = () => {
     navigate("/query");
   };
 
-  const initialLetter =
-    (currentUser?.username?.trim()?.charAt(0) ||
-      currentUser?.email?.trim()?.charAt(0) ||
-      "U").toUpperCase();
+  const initialLetter = (
+    currentUser?.username?.trim()?.charAt(0) ||
+    currentUser?.email?.trim()?.charAt(0) ||
+    "U"
+  ).toUpperCase();
 
   const providerLabel = currentUser?.authProvider
     ? currentUser.authProvider.charAt(0).toUpperCase() +
@@ -279,7 +308,9 @@ const Dashboard = () => {
               className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary"
             >
               <span className="text-sm text-muted-foreground hidden sm:block">
-                {profileLoading ? "Loading user..." : (currentUser?.email || "Unknown user")}
+                {profileLoading
+                  ? "Loading user..."
+                  : currentUser?.email || "Unknown user"}
               </span>
               <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
                 {currentUser?.avatarUrl ? (
@@ -289,7 +320,9 @@ const Dashboard = () => {
                     className="h-7 w-7 rounded-full object-cover"
                   />
                 ) : (
-                  <span className="text-xs font-medium text-primary">{initialLetter}</span>
+                  <span className="text-xs font-medium text-primary">
+                    {initialLetter}
+                  </span>
                 )}
               </div>
             </button>
@@ -400,82 +433,97 @@ const Dashboard = () => {
         {!reposLoading && !reposError && repos.length > 0 && (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {repos.map((repo) => (
-            <div
-              key={repo.id}
-              className="rounded-lg border bg-card p-4 shadow-subtle transition-shadow hover:shadow-card"
-            >
-              <div className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-medium text-foreground font-mono">
-                    {repo.name}
-                  </h3>
-                  <div className="mt-2 flex items-center gap-3">
-                    {repo.status === "indexed" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-success">
-                        <Check size={12} />
-                        Indexed
-                      </span>
-                    ) : repo.status === "processing" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-warning">
-                        <Loader2 size={12} className="animate-spin" />
-                        Processing
-                      </span>
-                    ) : (
+              <div
+                key={repo.id}
+                className="rounded-lg border bg-card p-4 shadow-subtle transition-shadow hover:shadow-card"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-medium text-foreground font-mono">
+                      {repo.name}
+                    </h3>
+                    <div className="mt-2 flex items-center gap-3">
+                      {repo.status === "indexed" ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-success">
+                          <Check size={12} />
+                          Indexed
+                        </span>
+                      ) : repo.status === "processing" ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-warning">
+                          <Loader2 size={12} className="animate-spin" />
+                          Processing
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Github size={12} />
+                          From GitHub
+                        </span>
+                      )}
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Github size={12} />
-                        From GitHub
+                        <Clock size={12} />
+                        {repo.lastUpdated}
                       </span>
+                    </div>
+                    {repo.files > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {repo.files} files
+                      </p>
                     )}
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock size={12} />
-                      {repo.lastUpdated}
-                    </span>
+                    {(repo.language || typeof repo.size === "number") && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {repo.language ? repo.language : "Unknown"}
+                        {typeof repo.size === "number"
+                          ? ` • ${repo.size} KB`
+                          : ""}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Last indexed:{" "}
+                      {repo.lastIndexedAt
+                        ? timeAgo(repo.lastIndexedAt)
+                        : "Not indexed"}
+                    </p>
+                    {repo.needsReindex && (
+                      <p className="mt-1 text-xs text-warning">
+                        Repository changed on GitHub. Re-index required.
+                      </p>
+                    )}
                   </div>
-                  {repo.files > 0 && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {repo.files} files
-                    </p>
-                  )}
-                  {(repo.language || typeof repo.size === "number") && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {repo.language ? repo.language : "Unknown"}
-                      {typeof repo.size === "number" ? ` • ${repo.size} KB` : ""}
-                    </p>
-                  )}
                 </div>
+                {repo.status === "processing" && (
+                  <div className="mt-3">
+                    <div className="h-1 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full w-2/3 rounded-full bg-warning animate-pulse-subtle" />
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Indexing repository…
+                    </p>
+                  </div>
+                )}
+                {repo.status === "indexed" && (
+                  <div className="mt-4">
+                    <Link
+                      to="/query"
+                      className="inline-flex w-full items-center justify-center rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+                    >
+                      Open
+                    </Link>
+                  </div>
+                )}
+                {repo.status === "available" && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => handleConnectRepo(repo.id)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      <Github size={14} />
+                      {activeProjectId === repo.id
+                        ? "Selected"
+                        : "Use in Query"}
+                    </button>
+                  </div>
+                )}
               </div>
-              {repo.status === "processing" && (
-                <div className="mt-3">
-                  <div className="h-1 w-full rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full w-2/3 rounded-full bg-warning animate-pulse-subtle" />
-                  </div>
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    Indexing repository…
-                  </p>
-                </div>
-              )}
-              {repo.status === "indexed" && (
-                <div className="mt-4">
-                  <Link
-                    to="/query"
-                    className="inline-flex w-full items-center justify-center rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-                  >
-                    Open
-                  </Link>
-                </div>
-              )}
-              {repo.status === "available" && (
-                <div className="mt-4">
-                  <button
-                    onClick={() => handleConnectRepo(repo.id)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                  >
-                    <Github size={14} />
-                    {activeProjectId === repo.id ? "Selected" : "Use in Query"}
-                  </button>
-                </div>
-              )}
-            </div>
             ))}
           </div>
         )}

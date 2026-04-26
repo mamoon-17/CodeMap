@@ -2,6 +2,21 @@ import { Result, ok, err } from "neverthrow";
 import { AgenticQueryResult } from "./types";
 import { config } from "../../config/config";
 
+interface IngestFileInput {
+  file_path: string;
+  content: string;
+}
+
+interface IngestRequest {
+  project_id: string;
+  files: IngestFileInput[];
+  replace_project?: boolean;
+}
+
+interface IngestResponse {
+  indexed: number;
+}
+
 class QueryService {
   private ragServiceUrl: string;
 
@@ -65,6 +80,37 @@ class QueryService {
       }
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to query Python RAG service: ${message}`);
+    }
+  }
+
+  async ingestCodebase(
+    request: IngestRequest,
+  ): Promise<Result<IngestResponse, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const response = await fetch(`${this.ragServiceUrl}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as IngestResponse;
+      return ok(data);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 10 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(
+        `Failed to ingest codebase via Python RAG service: ${message}`,
+      );
     }
   }
 }
