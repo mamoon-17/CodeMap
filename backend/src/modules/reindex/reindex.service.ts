@@ -31,6 +31,9 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".yml",
 ]);
 
+const MAX_FILES_PER_REINDEX = 500;
+const INGEST_BATCH_SIZE = 20;
+
 function walkDir(dir: string): string[] {
   const results: string[] = [];
   for (const file of fs.readdirSync(dir)) {
@@ -201,32 +204,56 @@ export class ReindexService {
           : extractPath;
 
       const filePaths = walkDir(repoRoot);
-      const files: Array<{ file_path: string; content: string }> = [];
+      if (filePaths.length === 0) {
+        throw new Error("No supported files found to ingest");
+      }
+
+      // Stream/iterate through repo files in small batches to keep memory low.
+      // First batch uses replace_project=true (fresh reindex). Remaining batches append.
+      let isFirstBatch = true;
+      let totalIndexedChunks = 0;
+      let acceptedFiles = 0;
+      let batch: Array<{ file_path: string; content: string }> = [];
+
+      const flushBatch = async () => {
+        if (batch.length === 0) return;
+        const ingestResult = await queryService.ingestCodebase({
+          project_id: job.projectId,
+          files: batch,
+          replace_project: isFirstBatch,
+        });
+        if (ingestResult.isErr()) {
+          throw new Error(ingestResult.error);
+        }
+        totalIndexedChunks += ingestResult.value.indexed;
+        batch = [];
+        isFirstBatch = false;
+      };
 
       for (const fullPath of filePaths) {
+        if (acceptedFiles >= MAX_FILES_PER_REINDEX) break;
+
+        const stat = fs.statSync(fullPath);
+        if (stat.size > 250_000) continue; // skip very large files
+
         const rel = path
           .relative(repoRoot, fullPath)
           .split(path.sep)
           .join("/");
-        const stat = fs.statSync(fullPath);
-        if (stat.size > 250_000) continue; // skip very large files
+
         const content = fs.readFileSync(fullPath, "utf8");
-        files.push({ file_path: rel, content });
-        if (files.length >= 500) break; // cap to avoid overloading local dev
+        batch.push({ file_path: rel, content });
+        acceptedFiles += 1;
+
+        if (batch.length >= INGEST_BATCH_SIZE) {
+          await flushBatch();
+        }
       }
 
-      if (files.length === 0) {
+      await flushBatch();
+
+      if (acceptedFiles === 0) {
         throw new Error("No supported files found to ingest");
-      }
-
-      const ingestResult = await queryService.ingestCodebase({
-        project_id: job.projectId,
-        files,
-        replace_project: true,
-      });
-
-      if (ingestResult.isErr()) {
-        throw new Error(ingestResult.error);
       }
 
       // Persist sync-state in RepositoryRecord (for Dashboard change detection)
@@ -240,7 +267,7 @@ export class ReindexService {
         {
           status: ReindexJobStatus.COMPLETED,
           error: null,
-          indexedChunks: ingestResult.value.indexed,
+          indexedChunks: totalIndexedChunks,
         },
       );
     } catch (e) {

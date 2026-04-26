@@ -12,6 +12,7 @@ import {
   LogOut,
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
+import { getReindexStatus, startReindex } from "@/services/api";
 
 interface Repo {
   id: string;
@@ -80,6 +81,8 @@ const Dashboard = () => {
   const [reposLoading, setReposLoading] = useState(true);
   const [reposError, setReposError] = useState("");
   const [profileLoading, setProfileLoading] = useState(true);
+  const [reindexingRepoId, setReindexingRepoId] = useState<string | null>(null);
+  const [reindexError, setReindexError] = useState<string>("");
   const [activeProjectId, setActiveProjectId] = useState(
     localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "",
   );
@@ -123,67 +126,100 @@ const Dashboard = () => {
       : undefined;
   };
 
-  useEffect(() => {
-    const loadProfileAndRepos = async () => {
-      setReposLoading(true);
-      setProfileLoading(true);
-      setReposError("");
+  const loadProfileAndRepos = async () => {
+    setReposLoading(true);
+    setProfileLoading(true);
+    setReposError("");
 
-      try {
-        const headers = authHeaders();
-        if (!headers) {
-          throw new Error("Please login to load repositories.");
-        }
-
-        const profileResponse = await fetch(`${API_BASE_URL}/users/me`, {
-          headers,
-        });
-        const profilePayload = await profileResponse.json();
-        if (profileResponse.ok) {
-          setCurrentUser(profilePayload.data as UserProfile);
-        }
-
-        const response = await fetch(`${API_BASE_URL}/users/repos`, {
-          headers,
-        });
-
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error || "Failed to load repositories");
-        }
-
-        const githubRepos = (payload.data?.repositories ||
-          []) as GithubRepoResponse[];
-
-        setRepos(
-          githubRepos.map((repo) => ({
-            id: `gh_${String(repo.id)}`,
-            name: repo.full_name,
-            status: "available",
-            lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
-            lastIndexedAt: repo.last_indexed_at,
-            hasChanges: repo.has_changes,
-            needsReindex: repo.needs_reindex,
-            files: 0,
-            language: repo.language || "Unknown",
-            size: repo.size,
-            source: "github",
-          })),
-        );
-      } catch (error) {
-        setReposError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load repositories",
-        );
-      } finally {
-        setReposLoading(false);
-        setProfileLoading(false);
+    try {
+      const headers = authHeaders();
+      if (!headers) {
+        throw new Error("Please login to load repositories.");
       }
-    };
 
+      const profileResponse = await fetch(`${API_BASE_URL}/users/me`, {
+        headers,
+      });
+      const profilePayload = await profileResponse.json();
+      if (profileResponse.ok) {
+        setCurrentUser(profilePayload.data as UserProfile);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/users/repos`, {
+        headers,
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load repositories");
+      }
+
+      const githubRepos = (payload.data?.repositories || []) as GithubRepoResponse[];
+
+      setRepos(
+        githubRepos.map((repo) => ({
+          id: `gh_${String(repo.id)}`,
+          name: repo.full_name,
+          status: "available",
+          lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
+          lastIndexedAt: repo.last_indexed_at,
+          hasChanges: repo.has_changes,
+          needsReindex: repo.needs_reindex,
+          files: 0,
+          language: repo.language || "Unknown",
+          size: repo.size,
+          source: "github",
+        })),
+      );
+    } catch (error) {
+      setReposError(
+        error instanceof Error ? error.message : "Failed to load repositories",
+      );
+    } finally {
+      setReposLoading(false);
+      setProfileLoading(false);
+    }
+  };
+
+  useEffect(() => {
     void loadProfileAndRepos();
   }, []);
+
+  const handleReindexFullRepo = async (repoId: string) => {
+    const token = localStorage.getItem("accessToken") || "";
+    if (!token) {
+      setReindexError("Please login to re-index repositories.");
+      return;
+    }
+
+    setReindexError("");
+    setReindexingRepoId(repoId);
+
+    try {
+      const start = await startReindex(token, { repo_id: repoId });
+      const jobId = start.data?.job_id;
+      if (!jobId) throw new Error("Reindex job did not return a job_id");
+
+      // Poll job status until terminal state.
+      for (let i = 0; i < 180; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const status = await getReindexStatus(token, jobId);
+        const st = status.data?.status;
+        if (st === "completed") break;
+        if (st === "failed") {
+          throw new Error(status.data?.error || "Reindex failed");
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+
+      await loadProfileAndRepos();
+    } catch (e) {
+      setReindexError(e instanceof Error ? e.message : "Reindex failed");
+    } finally {
+      setReindexingRepoId(null);
+    }
+  };
 
   const handleAddRepo = async () => {
     if (zipFile) {
@@ -513,6 +549,26 @@ const Dashboard = () => {
                 )}
                 {repo.status === "available" && (
                   <div className="mt-4">
+                    {repo.source === "github" && (
+                      <button
+                        onClick={() => handleReindexFullRepo(repo.id)}
+                        disabled={reindexingRepoId === repo.id}
+                        className="mb-2 inline-flex w-full items-center justify-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-60"
+                        title="Re-index full repository"
+                      >
+                        {reindexingRepoId === repo.id ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Re-indexing…
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw size={14} />
+                            Re-index
+                          </>
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleConnectRepo(repo.id)}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -526,6 +582,12 @@ const Dashboard = () => {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {!reposLoading && !reposError && reindexError && (
+          <div className="mt-4 rounded-lg border border-destructive/40 bg-card p-4">
+            <p className="text-sm text-destructive">{reindexError}</p>
           </div>
         )}
       </div>

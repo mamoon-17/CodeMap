@@ -19,6 +19,37 @@ export interface IngestResponse {
   indexed: number;
 }
 
+export interface ReindexStartRequest {
+  repo_id?: string;
+  project_id?: string;
+}
+
+export interface ReindexStartResponse {
+  success: boolean;
+  data?: {
+    job_id: string;
+    status: "started" | "completed" | "failed";
+    project_id: string;
+    repo_id: string;
+  };
+  error?: string;
+}
+
+export interface ReindexStatusResponse {
+  success: boolean;
+  data?: {
+    job_id: string;
+    status: "started" | "completed" | "failed";
+    project_id: string;
+    repo_id: string;
+    indexed_chunks: number;
+    error: string | null;
+    updated_at: string;
+    created_at: string;
+  };
+  error?: string;
+}
+
 export interface Source {
   file: string;
   chunk_index: number;
