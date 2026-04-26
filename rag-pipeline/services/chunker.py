@@ -124,7 +124,7 @@ def smart_chunk_file(
 ) -> list[dict[str, Any]]:
 
     if file_path.endswith((".js", ".jsx", ".ts", ".tsx")):
-        return chunk_js_file(file_path, content)
+        return chunk_js_file(file_path, content, max_chunk_size)
 
     # Non-Python files have no AST to leverage, so reuse the existing chunker.
     if not file_path.endswith(".py"):
