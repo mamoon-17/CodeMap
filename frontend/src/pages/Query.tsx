@@ -16,7 +16,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { ingestCodebase, queryCodebase } from "@/services/api";
-import type { Source } from "@/types/api";
+import type { ProjectContextItem, Source } from "@/types/api";
+
+const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
+const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
+const PROJECT_CONTEXTS_KEY = "projectContexts";
 
 interface Message {
   id: string;
@@ -143,8 +147,16 @@ const Query = () => {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [projectId, setProjectId] = useState("manual-project");
-  const [queryProjectId, setQueryProjectId] = useState("manual-project");
+  const [projectId, setProjectId] = useState(
+    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
+  );
+  const [queryProjectId, setQueryProjectId] = useState(
+    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
+  );
+  const [activeProjectName, setActiveProjectName] = useState(
+    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "manual-project",
+  );
+  const [projects, setProjects] = useState<ProjectContextItem[]>([]);
   const [filePath, setFilePath] = useState("src/manual_test.py");
   const [fileContent, setFileContent] = useState(
     [
@@ -155,6 +167,29 @@ const Query = () => {
   );
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as ProjectContextItem[];
+      setProjects(parsed);
+    } catch {
+      setProjects([]);
+    }
+  }, []);
+
+  const updateActiveProject = (nextProjectId: string) => {
+    const matched = projects.find((project) => project.id === nextProjectId);
+    const nextProjectName = matched?.name || nextProjectId;
+
+    setProjectId(nextProjectId);
+    setQueryProjectId(nextProjectId);
+    setActiveProjectName(nextProjectName);
+    localStorage.setItem(ACTIVE_PROJECT_ID_KEY, nextProjectId);
+    localStorage.setItem(ACTIVE_PROJECT_NAME_KEY, nextProjectName);
+  };
 
   const handleMouseMoveLeft = useCallback(
     (e: MouseEvent) => {
@@ -208,6 +243,8 @@ const Query = () => {
 
   const handleSend = async () => {
     if (!input.trim() || !queryProjectId.trim() || isLoading) return;
+
+    updateActiveProject(queryProjectId.trim());
 
     const userMsg: Message = {
       id: String(Date.now()),
@@ -282,7 +319,7 @@ const Query = () => {
       setIngestStatus(
         `Ingested successfully. Indexed chunks: ${response.indexed}`,
       );
-      setQueryProjectId(projectId.trim() || "manual-project");
+      updateActiveProject(projectId.trim() || "manual-project");
     } catch (error) {
       setIngestStatus(
         `Ingest failed: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -312,6 +349,10 @@ const Query = () => {
             <span className="text-sm font-medium text-foreground font-mono">
               Query Interface
             </span>
+            <span className="text-muted-foreground/40">/</span>
+            <span className="text-xs text-muted-foreground truncate max-w-[220px]">
+              {activeProjectName}
+            </span>
           </div>
         </div>
       </nav>
@@ -331,6 +372,7 @@ const Query = () => {
                 </span>
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={handleIngest}
                     className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
                     title="Re-index"
                   >
@@ -391,13 +433,28 @@ const Query = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <input
-                  type="text"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                  placeholder="Project ID"
-                  className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    placeholder="Project ID"
+                    className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  {projects.length > 0 && (
+                    <select
+                      value={projectId}
+                      onChange={(e) => updateActiveProject(e.target.value)}
+                      className="rounded border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={filePath}
@@ -432,13 +489,28 @@ const Query = () => {
                   <PanelLeftOpen size={16} />
                 </button>
               )}
-              <input
-                type="text"
-                value={queryProjectId}
-                onChange={(e) => setQueryProjectId(e.target.value)}
-                placeholder="Query Project ID"
-                className="w-44 rounded-md border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={queryProjectId}
+                  onChange={(e) => setQueryProjectId(e.target.value)}
+                  placeholder="Query Project ID"
+                  className="w-44 rounded-md border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                {projects.length > 0 && (
+                  <select
+                    value={queryProjectId}
+                    onChange={(e) => updateActiveProject(e.target.value)}
+                    className="rounded-md border bg-card px-2 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <div className="relative flex-1">
                 <Search
                   size={16}

@@ -14,3 +14,5 @@ Content-Type: application/zip
 
 < ./test.zip
 ------Boundary--
+@baseUrl = http://localhost:5000
+@token = PASTE_BACKEND_ACCESS_TOKEN_HERE

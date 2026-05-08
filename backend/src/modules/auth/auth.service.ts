@@ -5,9 +5,116 @@ import { ok, err, Result } from "neverthrow";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 
+export type OAuthIntent = "login" | "signup";
+
 export class AuthService {
   private getUserRepository(): Repository<User> {
     return AppDataSource.getRepository(User);
+  }
+
+  async loginOrCreateOAuthUser(params: {
+    provider: AuthProvider.GOOGLE | AuthProvider.GITHUB;
+    providerId: string;
+    email: string;
+    username: string;
+    avatarUrl?: string;
+    oauthAccessToken?: string;
+    intent?: OAuthIntent;
+  }): Promise<Result<User, string>> {
+    const repository = this.getUserRepository();
+    const intent = params.intent || "login";
+
+    try {
+      const providerWhere =
+        params.provider === AuthProvider.GOOGLE
+          ? { googleId: params.providerId }
+          : { githubId: params.providerId };
+
+      const existingByProvider = await repository.findOne({
+        where: providerWhere,
+      });
+
+      if (existingByProvider) {
+        if (intent === "signup") {
+          return err("Account already exists. Please login instead.");
+        }
+
+        if (params.avatarUrl) {
+          existingByProvider.avatarUrl = params.avatarUrl;
+        }
+        if (params.provider === AuthProvider.GITHUB && params.oauthAccessToken) {
+          existingByProvider.githubAccessToken = params.oauthAccessToken;
+        }
+        existingByProvider.lastLogin = new Date();
+        const updatedUser = await repository.save(existingByProvider);
+        return ok(updatedUser);
+      }
+
+      const existingByEmail = await repository.findOne({
+        where: { email: params.email },
+      });
+
+      if (existingByEmail) {
+        if (intent === "signup") {
+          return err("Account already exists. Please login instead.");
+        }
+
+        if (existingByEmail.authProvider !== params.provider) {
+          return err(
+            `This email is already registered with ${existingByEmail.authProvider} authentication.`,
+          );
+        }
+
+        if (params.provider === AuthProvider.GOOGLE) {
+          existingByEmail.googleId = params.providerId;
+        } else {
+          const linkedGithubUser = await repository.findOne({
+            where: { githubId: params.providerId },
+          });
+
+          if (linkedGithubUser && linkedGithubUser.id !== existingByEmail.id) {
+            return err("This GitHub account is already linked to another user.");
+          }
+
+          existingByEmail.githubId = params.providerId;
+          if (params.oauthAccessToken) {
+            existingByEmail.githubAccessToken = params.oauthAccessToken;
+          }
+        }
+
+        if (params.avatarUrl) {
+          existingByEmail.avatarUrl = params.avatarUrl;
+        }
+
+        existingByEmail.lastLogin = new Date();
+        const updatedUser = await repository.save(existingByEmail);
+        return ok(updatedUser);
+      }
+
+      const newOAuthUser = repository.create({
+        username: params.username,
+        email: params.email,
+        password: null,
+        authProvider: params.provider,
+        googleId:
+          params.provider === AuthProvider.GOOGLE ? params.providerId : null,
+        githubId:
+          params.provider === AuthProvider.GITHUB ? params.providerId : null,
+        githubAccessToken:
+          params.provider === AuthProvider.GITHUB
+            ? (params.oauthAccessToken ?? null)
+            : null,
+        avatarUrl: params.avatarUrl || null,
+        isGuest: false,
+        lastLogin: new Date(),
+      });
+
+      const savedUser = await repository.save(newOAuthUser);
+      return ok(savedUser);
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      return err(`Failed OAuth login: ${errorMessage}`);
+    }
   }
 
   async register(

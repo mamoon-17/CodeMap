@@ -1,20 +1,30 @@
 import dotenv from "dotenv";
+import path from "path";
 import { ok, err, Result } from "neverthrow";
 
-dotenv.config();
+dotenv.config({
+  path: path.resolve(__dirname, "../../.env"),
+  override: true,
+});
 
 export class Config {
   private SUPABASE_URI?: string;
   private PORT?: number;
+  private FRONTEND_URL?: string;
   private RAG_SERVICE_URL?: string;
   private JWT_ACCESS_SECRET?: string;
   private JWT_REFRESH_SECRET?: string;
+  private GOOGLE_CLIENT_ID?: string;
+  private GOOGLE_CLIENT_SECRET?: string;
+  private GITHUB_CLIENT_ID?: string;
+  private GITHUB_CLIENT_SECRET?: string;
   private initialized = false;
 
   constructor() {
     this.SUPABASE_URI = process.env.SUPABASE_URI;
     const port = process.env.PORT;
     this.PORT = port ? parseInt(port, 10) : undefined;
+    this.FRONTEND_URL = process.env.FRONTEND_URL;
     // Python RAG service URL (replaces GEMINI_API_KEY and EMBEDDING_SERVICE_URL)
     this.RAG_SERVICE_URL =
       process.env.RAG_SERVICE_URL ||
@@ -22,6 +32,10 @@ export class Config {
       "http://localhost:5001";
     this.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
     this.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+    this.GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+    this.GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+    this.GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+    this.GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
   }
 
   init(): Result<string, string[]> {
@@ -49,6 +63,10 @@ export class Config {
     return this.PORT;
   }
 
+  getFrontendUrl() {
+    return this.FRONTEND_URL;
+  }
+
   getGeminiApiKey() {
     // Kept for backward compatibility, but no longer used
     // API key is now in Python service
@@ -66,6 +84,22 @@ export class Config {
 
   getJwtRefreshSecret() {
     return this.JWT_REFRESH_SECRET;
+  }
+
+  getGoogleClientId() {
+    return this.GOOGLE_CLIENT_ID;
+  }
+
+  getGoogleClientSecret() {
+    return this.GOOGLE_CLIENT_SECRET;
+  }
+
+  getGithubClientId() {
+    return this.GITHUB_CLIENT_ID;
+  }
+
+  getGithubClientSecret() {
+    return this.GITHUB_CLIENT_SECRET;
   }
 }
 

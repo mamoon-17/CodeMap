@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const Login = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -27,13 +30,17 @@ const Login = () => {
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const startOAuth = (provider: "google" | "github") => {
+    window.location.href = `${API_BASE_URL}/auth/${provider}?mode=login`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
     setServerError("");
     try {
-      const res = await fetch("http://localhost:5000/auth/login", {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -185,16 +192,16 @@ const Login = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <Button
-              variant="outline"
               type="button"
-              className="gap-2 text-sm h-10"
+              className="gap-2 text-sm h-10 bg-[#24292f] text-white border border-[#24292f] hover:bg-[#1f2328]"
+              onClick={() => startOAuth("github")}
             >
               <Github size={15} /> GitHub
             </Button>
             <Button
-              variant="outline"
               type="button"
-              className="gap-2 text-sm h-10"
+              className="gap-2 text-sm h-10 bg-white text-[#3c4043] border border-[#dadce0] hover:bg-[#f8f9fa]"
+              onClick={() => startOAuth("google")}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path
