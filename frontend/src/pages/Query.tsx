@@ -372,6 +372,7 @@ const Query = () => {
                 </span>
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={handleIngest}
                     className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
                     title="Re-index"
                   >

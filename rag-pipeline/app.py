@@ -16,9 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import config
 from models.schemas import HealthResponse
 from routers.ingest import router as ingest_router
+from routers.projects import router as projects_router
 from routers.query import router as query_router
 from services.embedder import warmup_model
 from services.rag_service import get_rag_service
+from services.chunk_store import init_db
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize services
     try:
+        init_db()
         get_rag_service()
         logger.info("✅ RAG service initialized")
     except Exception as e:
@@ -103,6 +106,7 @@ app.add_middleware(
 
 app.include_router(query_router)
 app.include_router(ingest_router)
+app.include_router(projects_router)
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check() -> HealthResponse:

@@ -1,4 +1,4 @@
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
 import { AppDataSource } from "../../config/datasource";
 import { Result, ok, err } from "neverthrow";
@@ -18,6 +18,13 @@ export interface GithubRepository {
     avatar_url: string;
   };
   updated_at: string;
+  pushed_at: string | null;
+}
+
+export interface GithubRepositoryWithSyncState extends GithubRepository {
+  last_indexed_at: string | null;
+  has_changes: boolean;
+  needs_reindex: boolean;
 }
 
 interface ListGithubReposOptions {
@@ -39,9 +46,23 @@ interface GithubApiRepository {
     avatar_url: string;
   };
   updated_at: string;
+  pushed_at: string | null;
 }
 
 class UserService {
+  private getRepoChangeTimestamp(repo: { pushed_at?: string | null; updated_at?: string | null }): Date | null {
+    const raw = repo.pushed_at || repo.updated_at || null;
+    return raw ? new Date(raw) : null;
+  }
+
+  private hasRepoChanged(
+    githubUpdatedAt: Date | null,
+    lastIndexedAt: Date | null,
+  ): boolean {
+    if (!githubUpdatedAt || !lastIndexedAt) return false;
+    return githubUpdatedAt.getTime() > lastIndexedAt.getTime();
+  }
+
   private getRepo(): Repository<User> {
     return AppDataSource.getRepository(User);
   }
@@ -117,9 +138,21 @@ class UserService {
     if (repositories.length === 0) return;
 
     const repositoryRecordRepo = this.getRepositoryRecordRepo();
+    const githubRepoIds = repositories.map((repo) => String(repo.id));
+    const existingRecords = await repositoryRecordRepo.find({
+      where: {
+        githubRepoId: In(githubRepoIds),
+      },
+    });
+    const existingByGithubId = new Map(
+      existingRecords.map((record) => [record.githubRepoId, record]),
+    );
 
     await repositoryRecordRepo.upsert(
       repositories.map((repo) => ({
+        ...(existingByGithubId.get(String(repo.id))?.id
+          ? { id: existingByGithubId.get(String(repo.id))?.id }
+          : {}),
         githubRepoId: String(repo.id),
         name: repo.name,
         fullName: repo.full_name,
@@ -131,6 +164,13 @@ class UserService {
         ownerLogin: repo.owner.login,
         ownerAvatarUrl: repo.owner.avatar_url || null,
         githubUpdatedAt: repo.updated_at ? new Date(repo.updated_at) : null,
+        githubPushedAt: repo.pushed_at ? new Date(repo.pushed_at) : null,
+        lastIndexedAt:
+          existingByGithubId.get(String(repo.id))?.lastIndexedAt || null,
+        needsReindex: this.hasRepoChanged(
+          this.getRepoChangeTimestamp(repo),
+          existingByGithubId.get(String(repo.id))?.lastIndexedAt || null,
+        ),
       })),
       ["githubRepoId"],
     );
@@ -190,7 +230,7 @@ class UserService {
   async listGithubRepos(
     userId: string,
     options: ListGithubReposOptions = {},
-  ): Promise<Result<GithubRepository[], string>> {
+  ): Promise<Result<GithubRepositoryWithSyncState[], string>> {
     try {
       const repo = this.getRepo();
       const user = await repo.findOne({ where: { id: userId } });
@@ -200,7 +240,9 @@ class UserService {
       }
 
       if (!user.githubAccessToken) {
-        return err("GitHub account not connected. Please authenticate with GitHub.");
+        return err(
+          "GitHub account not connected. Please authenticate with GitHub.",
+        );
       }
 
       const includeForks = options.includeForks ?? false;
@@ -229,7 +271,34 @@ class UserService {
 
       await this.syncGithubRepositories(collected);
 
-      return ok(collected);
+      const repositoryRecordRepo = this.getRepositoryRecordRepo();
+      const githubRepoIds = collected.map((repoItem) => String(repoItem.id));
+
+      const storedRecords = await repositoryRecordRepo.find({
+        where: {
+          githubRepoId: In(githubRepoIds),
+        },
+      });
+
+      const storedByGithubId = new Map(
+        storedRecords.map((record) => [record.githubRepoId, record]),
+      );
+
+      const repositoriesWithState = collected.map((repoItem) => {
+        const stored = storedByGithubId.get(String(repoItem.id));
+        const githubUpdatedAt = this.getRepoChangeTimestamp(repoItem);
+        const lastIndexedAt = stored?.lastIndexedAt || null;
+        const hasChanges = this.hasRepoChanged(githubUpdatedAt, lastIndexedAt);
+
+        return {
+          ...repoItem,
+          last_indexed_at: lastIndexedAt ? lastIndexedAt.toISOString() : null,
+          has_changes: hasChanges,
+          needs_reindex: hasChanges || Boolean(stored?.needsReindex),
+        };
+      });
+
+      return ok(repositoriesWithState);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to fetch GitHub repositories: ${message}`);

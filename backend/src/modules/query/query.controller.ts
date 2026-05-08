@@ -3,6 +3,8 @@ import { queryService, IngestRequest } from "./query.service";
 import { AgenticQueryRequest, SnippetAnalysisRequest } from "./types";
 import { QueryValidator } from "./utils";
 import { ERROR_MESSAGES } from "./constants";
+import { AppDataSource } from "../../config/datasource";
+import { RepositoryRecord } from "../project/repository.entity";
 
 class QueryController {
   /**
@@ -63,6 +65,54 @@ class QueryController {
     );
   };
 
+  ingestCodebase = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await queryService.ingestCodebase(req.body);
+
+      return result.match(
+        async (ingestResult) => {
+          const projectId = String(req.body?.project_id || "").trim();
+          const ghMatch = projectId.match(/^gh_(\d+)$/);
+
+          // If this ingest corresponds to a GitHub repo, persist "last indexed"
+          // so the Dashboard can compare vs GitHub `updated_at`.
+          if (ghMatch) {
+            const githubRepoId = ghMatch[1];
+            try {
+              const repo = AppDataSource.getRepository(RepositoryRecord);
+              const updateResult = await repo.update(
+                { githubRepoId },
+                { lastIndexedAt: new Date(), needsReindex: false },
+              );
+              if (updateResult.affected === 0) {
+                console.warn(
+                  `[ingest] No RepositoryRecord found for githubRepoId=${githubRepoId} (project_id=${projectId})`,
+                );
+              }
+            } catch {
+              // Avoid failing ingest if sync-state update fails.
+              console.warn(
+                `[ingest] Failed updating sync state for project_id=${projectId}`,
+              );
+            }
+          }
+
+          return res.status(200).json(ingestResult);
+        },
+        (error) => {
+          if (error.includes("Python RAG service error")) {
+            return res.status(502).json({
+              error: "Embedding service unavailable. Please try again later.",
+              details: error,
+            });
+          }
+
+          return next(new Error(error));
+        },
+      );
+    } catch (error) {
+      return next(error);
+    }
   /**
    * POST /query/analyze-snippet
    *

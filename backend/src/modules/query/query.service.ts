@@ -2,6 +2,18 @@ import { Result, ok, err } from "neverthrow";
 import { AgenticQueryResult, SnippetAnalysisResult } from "./types";
 import { config } from "../../config/config";
 
+interface IngestFileInput {
+  file_path: string;
+  content: string;
+}
+
+interface IngestRequest {
+  project_id: string;
+  files: IngestFileInput[];
+  replace_project?: boolean;
+}
+
+interface IngestResponse {
 export interface IngestRequest {
   project_id: string;
   files: Array<{ file_path: string; content: string }>;
@@ -78,6 +90,16 @@ class QueryService {
     }
   }
 
+  async ingestCodebase(
+    request: IngestRequest,
+  ): Promise<Result<IngestResponse, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const response = await fetch(`${this.ragServiceUrl}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
   async analyzeSnippet(
     filePath: string,
     code: string,
@@ -97,6 +119,7 @@ class QueryService {
         return err(`Python RAG service error ${response.status}: ${errorText}`);
       }
 
+      const data = (await response.json()) as IngestResponse;
       const data = (await response.json()) as SnippetAnalysisResult;
       if (
         !data ||
@@ -113,6 +136,9 @@ class QueryService {
         return err("Python RAG service request timed out after 10 seconds");
       }
       const message = e instanceof Error ? e.message : String(e);
+      return err(
+        `Failed to ingest codebase via Python RAG service: ${message}`,
+      );
       return err(`Failed to query Python RAG service: ${message}`);
     }
   }

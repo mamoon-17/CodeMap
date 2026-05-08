@@ -44,6 +44,15 @@ export class RepositoryRecord {
   @Column({ type: "timestamp", nullable: true })
   githubUpdatedAt: Date | null;
 
+  @Column({ type: "timestamp", nullable: true })
+  githubPushedAt: Date | null;
+
+  @Column({ type: "timestamp", nullable: true })
+  lastIndexedAt: Date | null;
+
+  @Column({ type: "boolean", default: false })
+  needsReindex: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
