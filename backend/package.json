@@ -13,7 +13,6 @@
   "dependencies": {
     "adm-zip": "^0.5.16",
     "bcrypt": "^6.0.0",
-    "adm-zip": "^0.5.16",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
@@ -29,7 +28,6 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/bcrypt": "^6.0.0",
-    "@types/adm-zip": "^0.5.7",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

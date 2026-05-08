@@ -42,7 +42,6 @@ from typing import Any, Iterable
 
 import chromadb
 import logging
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sentence_transformers import SentenceTransformer
@@ -55,13 +54,11 @@ except Exception:
     pass
 
 from services.chunker import smart_chunk_file
+from services.chunk_store import init_db, delete_project, delete_file, upsert_chunks
 
 
 def compute_file_hash(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
-
-from services.chunker import chunk_file
-from services.chunk_store import init_db, delete_project, delete_file, upsert_chunks
 
 _model: SentenceTransformer | None = None
 _chroma_client: chromadb.PersistentClient | None = None
@@ -127,33 +124,47 @@ def ingest_and_embed(
     total_chunks = 0
     skipped_count = 0
 
-    for file in files:
-        file_hash = compute_file_hash(file.content)
+    files_list = list(files)
+    file_count = len(files_list)
 
-        existing = collection.get(where={"file_path": file.file_path}, limit=1)
-        existing_metas = existing.get("metadatas") or []
-        if existing_metas:
-            existing_hash = (existing_metas[0] or {}).get("file_hash")
-            if existing_hash == file_hash:
-                skipped_count += 1
-                continue
+    files_to_process: list[Any] = []
+    if not replace_project:
+        for file in files_list:
+            file_hash = compute_file_hash(file.content)
+            existing = collection.get(where={"file_path": file.file_path}, limit=1)
+            existing_metas = existing.get("metadatas") or []
+            if existing_metas:
+                existing_hash = (existing_metas[0] or {}).get("file_hash")
+                if existing_hash == file_hash:
+                    skipped_count += 1
+                    continue
+            files_to_process.append(file)
+    else:
+        files_to_process = files_list
 
-    file_count = 0
     t_chunk = 0.0
     t_chunk_store = 0.0
     t_embed = 0.0
     t_upsert = 0.0
 
-    # Materialize iterable once (FastAPI gives a list, but this keeps types simple)
-    files_list = list(files)
-    file_count = len(files_list)
+    if not files_to_process:
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "ingest_and_embed project=%s files=%d chunks=0 (all skipped) replace=%s elapsed=%.2fs",
+            project_id,
+            file_count,
+            replace_project,
+            elapsed,
+        )
+        return {"indexed": 0, "skipped_files": skipped_count}
 
     # Chunk files in parallel (I/O + string splitting). Keep embedding/upsert single-stream.
     t1 = time.perf_counter()
     chunk_results: list[tuple[str, list[dict[str, Any]]]] = []
     with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as ex:
         futures = {
-            ex.submit(chunk_file, f.file_path, f.content): f.file_path for f in files_list
+            ex.submit(smart_chunk_file, f.file_path, f.content): f.file_path
+            for f in files_to_process
         }
         for fut in as_completed(futures):
             file_path = futures[fut]
@@ -161,9 +172,9 @@ def ingest_and_embed(
             chunk_results.append((file_path, chunks))
     t_chunk += time.perf_counter() - t1
 
-    # Keep original file order for deterministic indexing (optional)
     by_path = {p: c for (p, c) in chunk_results}
-    ordered_paths = [f.file_path for f in files_list]
+    path_to_file = {f.file_path: f for f in files_to_process}
+    ordered_paths = [f.file_path for f in files_to_process]
 
     for file_path in ordered_paths:
         chunks = by_path.get(file_path, [])
@@ -184,42 +195,20 @@ def ingest_and_embed(
 
         texts = [c["text"] for c in chunks]
         ids = [c["vector_id"] for c in chunks]
+        file_obj = path_to_file[file_path]
+        file_hash = compute_file_hash(file_obj.content)
         metadatas = [
             {
                 "file_path": c["file_path"],
                 "start_line": c["start_line"],
                 "end_line": c["end_line"],
                 "project_id": project_id,
+                "file_hash": file_hash,
+                "language": c.get("language", "unknown"),
             }
             for c in chunks
         ]
-            collection.delete(where={"file_path": file.file_path})
 
-        chunks = smart_chunk_file(file.file_path, file.content)
-
-        for chunk in chunks:
-            embedding = model.encode(chunk["text"], show_progress_bar=False).tolist()
-            chunk_id = f"{project_id}_{chunk['file_path']}_{chunk['start_line']}"
-
-            # Upsert prevents duplicate-id failures on re-ingestion.
-            collection.upsert(
-                ids=[chunk_id],
-                embeddings=[embedding],
-                documents=[chunk["text"]],
-                metadatas=[
-                    {
-                        "file_path": chunk["file_path"],
-                        "start_line": chunk["start_line"],
-                        "end_line": chunk["end_line"],
-                        "project_id": project_id,
-                        "file_hash": file_hash,
-                        "language": chunk["language"],
-                    }
-                ],
-            )
-            total_chunks += 1
-
-    return {"indexed": total_chunks, "skipped_files": skipped_count}
         t2 = time.perf_counter()
         embeddings = model.encode(
             texts,
@@ -241,7 +230,8 @@ def ingest_and_embed(
 
     elapsed = time.perf_counter() - t0
     logger.info(
-        "ingest_and_embed project=%s files=%d chunks=%d replace=%s elapsed=%.2fs (model=%.2fs chunk=%.2fs chunkdb=%.2fs embed=%.2fs upsert=%.2fs workers=%d)",
+        "ingest_and_embed project=%s files=%d chunks=%d replace=%s elapsed=%.2fs "
+        "(model=%.2fs chunk=%.2fs chunkdb=%.2fs embed=%.2fs upsert=%.2fs workers=%d skipped=%d)",
         project_id,
         file_count,
         total_chunks,
@@ -253,8 +243,9 @@ def ingest_and_embed(
         t_embed,
         t_upsert,
         CHUNK_WORKERS,
+        skipped_count,
     )
-    return {"indexed": total_chunks}
+    return {"indexed": total_chunks, "skipped_files": skipped_count}
 
 
 def retrieve_similar_chunks(

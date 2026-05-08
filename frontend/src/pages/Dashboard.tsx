@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -156,7 +156,7 @@ const Dashboard = () => {
       : undefined;
   };
 
-  const loadProfileAndRepos = async () => {
+  const loadProfileAndRepos = useCallback(async () => {
     setReposLoading(true);
     setProfileLoading(true);
     setReposError("");
@@ -209,11 +209,11 @@ const Dashboard = () => {
       setReposLoading(false);
       setProfileLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadProfileAndRepos();
-  }, []);
+  }, [loadProfileAndRepos]);
 
   const handleReindexFullRepo = async (repoId: string) => {
     const token = localStorage.getItem("accessToken") || "";
@@ -241,7 +241,6 @@ const Dashboard = () => {
 
       // Poll job status until terminal state.
       for (let i = 0; i < 180; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
         const status = await getReindexStatus(token, jobId);
         const st = status.data?.status;
         const lastStep = status.data?.last_step;
@@ -262,7 +261,6 @@ const Dashboard = () => {
         if (st === "failed") {
           throw new Error(status.data?.error || "Reindex failed");
         }
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, 2000));
       }
 
@@ -285,10 +283,8 @@ const Dashboard = () => {
       await loadProfileAndRepos();
     } catch (e) {
       setReindexError(e instanceof Error ? e.message : "Reindex failed");
-      const jobId =
-        reindexUiByRepo[repoId] && "jobId" in reindexUiByRepo[repoId]
-          ? (reindexUiByRepo[repoId] as any).jobId
-          : "";
+      const ui = reindexUiByRepo[repoId];
+      const jobId = ui && ui.status !== "idle" ? ui.jobId : "";
       setReindexUiByRepo((prev) => ({
         ...prev,
         [repoId]: {
@@ -550,7 +546,9 @@ const Dashboard = () => {
 
         {!reposLoading && !reposError && repos.length > 0 && (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {repos.map((repo) => (
+            {repos.map((repo) => {
+              const reindexUi = reindexUiByRepo[repo.id];
+              return (
               <div
                 key={repo.id}
                 className="rounded-lg border bg-card p-4 shadow-subtle transition-shadow hover:shadow-card"
@@ -654,31 +652,31 @@ const Dashboard = () => {
                     )}
 
                     {repo.source === "github" &&
-                      reindexUiByRepo[repo.id]?.status === "running" && (
+                      reindexUi?.status === "running" && (
                         <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <div className="flex items-center gap-2">
                             <Loader2 size={14} className="animate-spin" />
                             <span className="truncate">
-                              {(reindexUiByRepo[repo.id] as any).lastStep
-                                ? `Step: ${(reindexUiByRepo[repo.id] as any).lastStep}`
+                              {reindexUi.lastStep
+                                ? `Step: ${reindexUi.lastStep}`
                                 : "Indexing…"}
                             </span>
                           </div>
-                          {(reindexUiByRepo[repo.id] as any).lastMessage && (
+                          {reindexUi.lastMessage && (
                             <p className="mt-1 font-mono text-[11px] text-muted-foreground truncate">
-                              {(reindexUiByRepo[repo.id] as any).lastMessage}
+                              {reindexUi.lastMessage}
                             </p>
                           )}
                         </div>
                       )}
 
                     {repo.source === "github" &&
-                      reindexUiByRepo[repo.id]?.status === "completed" && (
+                      reindexUi?.status === "completed" && (
                         <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <div className="flex items-center justify-between gap-2">
                             <span>
                               Indexed chunks:{" "}
-                              {(reindexUiByRepo[repo.id] as any).indexedChunks}
+                              {reindexUi.indexedChunks}
                             </span>
                             <button
                               type="button"
@@ -690,28 +688,18 @@ const Dashboard = () => {
                               }
                             >
                               Skipped:{" "}
-                              {(reindexUiByRepo[repo.id] as any)
-                                .skippedFilesCount ?? 0}
+                              {reindexUi.skippedFilesCount ?? 0}
                             </button>
                           </div>
                           {expandedSkipsRepoId === repo.id && (
                             <div className="mt-2 space-y-1">
-                              {(
-                                (reindexUiByRepo[repo.id] as any)
-                                  .skippedFiles || []
-                              ).length === 0 ? (
+                              {(reindexUi.skippedFiles ?? []).length === 0 ? (
                                 <p className="text-xs text-muted-foreground">
                                   No skipped-file details (or none skipped).
                                 </p>
                               ) : (
                                 <ul className="max-h-28 overflow-auto space-y-1 pr-1">
-                                  {(
-                                    (reindexUiByRepo[repo.id] as any)
-                                      .skippedFiles as Array<{
-                                      file: string;
-                                      reason: string;
-                                    }>
-                                  ).map((s) => (
+                                  {(reindexUi.skippedFiles ?? []).map((s) => (
                                     <li key={s.file} className="font-mono">
                                       {s.file}{" "}
                                       <span className="text-muted-foreground">
@@ -727,10 +715,10 @@ const Dashboard = () => {
                       )}
 
                     {repo.source === "github" &&
-                      reindexUiByRepo[repo.id]?.status === "failed" && (
+                      reindexUi?.status === "failed" && (
                         <div className="mb-2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive">
                           Re-index failed:{" "}
-                          {(reindexUiByRepo[repo.id] as any).error}
+                          {reindexUi.error}
                         </div>
                       )}
                     <button
@@ -746,7 +734,8 @@ const Dashboard = () => {
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
 

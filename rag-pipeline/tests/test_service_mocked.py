@@ -45,11 +45,11 @@ class TestLlmClientMocked:
             client = LlmClient()
             result = await client.generate_with_tools(
                 "What is the query service?",
-                []
             )
-            
+
             assert result is not None
-            assert "content" in result or "answer" in str(result)
+            assert result.get("type") == "answer"
+            assert result.get("text") == "This is a test response"
             print("✓ LLM Client generated response (mocked)")
 
 
@@ -57,15 +57,32 @@ class TestEmbeddingServiceMocked:
     """Test embedding service with mock data"""
     
     @pytest.mark.asyncio
-    async def test_search_code(self):
-        """Should return mock code chunks"""
-        service = EmbeddingService()
-        chunks = await service.search_code("authentication", top_k=3)
-        
-        assert len(chunks) > 0
-        assert len(chunks) <= 3
-        assert hasattr(chunks[0], 'content')
-        print(f"✓ Embedding service returned {len(chunks)} chunks")
+    async def test_retrieve_chunks_mocked(self):
+        """Should map embedder hits into Chunk models."""
+        mock_raw = [
+            {
+                "id": "c1",
+                "score": 0.9,
+                "metadata": {
+                    "file_path": "src/auth.ts",
+                    "start_line": 1,
+                    "project_id": "p1",
+                },
+                "text": "export function login() {}",
+            },
+        ]
+        with patch(
+            "services.embedding_service.retrieve_similar_chunks",
+            return_value=mock_raw,
+        ):
+            service = EmbeddingService()
+            chunks = await service.retrieve_chunks(
+                "authentication", top_k=3, project_id="p1"
+            )
+
+        assert len(chunks) == 1
+        assert chunks[0].metadata.text == mock_raw[0]["text"]
+        assert chunks[0].metadata.file == "src/auth.ts"
 
 
 class TestRagServiceMocked:

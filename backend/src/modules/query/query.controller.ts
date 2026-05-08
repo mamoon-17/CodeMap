@@ -113,6 +113,8 @@ class QueryController {
     } catch (error) {
       return next(error);
     }
+  };
+
   /**
    * POST /query/analyze-snippet
    *

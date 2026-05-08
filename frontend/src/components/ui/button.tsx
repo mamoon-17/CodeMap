@@ -44,4 +44,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+// Shared with `buttonVariants` consumers (e.g. `className` composition); fast-refresh caveat is acceptable here.
+// eslint-disable-next-line react-refresh/only-export-components -- variant helper is part of the public Button API
 export { Button, buttonVariants };
