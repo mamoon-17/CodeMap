@@ -32,3 +32,20 @@ export interface QueryResponse {
   tool_used: boolean;
   sources?: Source[];
 }
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  email: string;
+  authProvider: "local" | "google" | "github" | "guest";
+  avatarUrl: string | null;
+  isGuest: boolean;
+  githubConnected: boolean;
+  googleConnected: boolean;
+}
+
+export interface ProjectContextItem {
+  id: string;
+  name: string;
+  source: "github" | "upload";
+}
