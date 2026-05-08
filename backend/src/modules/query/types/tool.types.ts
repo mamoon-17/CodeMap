@@ -40,3 +40,14 @@ export interface AgenticQueryResult {
     text: string;
   }>;
 }
+
+export interface SnippetAnalysisRequest {
+  file_path: string;
+  code: string;
+}
+
+export interface SnippetAnalysisResult {
+  file_path: string;
+  summary: string;
+  explanation: string;
+}

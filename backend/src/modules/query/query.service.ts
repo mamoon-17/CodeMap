@@ -1,5 +1,5 @@
 import { Result, ok, err } from "neverthrow";
-import { AgenticQueryResult } from "./types";
+import { AgenticQueryResult, SnippetAnalysisResult } from "./types";
 import { config } from "../../config/config";
 
 interface IngestFileInput {
@@ -14,6 +14,13 @@ interface IngestRequest {
 }
 
 interface IngestResponse {
+export interface IngestRequest {
+  project_id: string;
+  files: Array<{ file_path: string; content: string }>;
+  replace_project?: boolean;
+}
+
+export interface IngestResult {
   indexed: number;
 }
 
@@ -23,7 +30,7 @@ class QueryService {
   constructor() {
     // Python RAG service URL (previously embedding service URL)
     this.ragServiceUrl =
-      config.getEmbeddingServiceUrl() || "http://localhost:8000";
+      config.getEmbeddingServiceUrl() || "http://localhost:5001";
   }
 
   /**
@@ -93,6 +100,17 @@ class QueryService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request),
+  async analyzeSnippet(
+    filePath: string,
+    code: string,
+  ): Promise<Result<SnippetAnalysisResult, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const response = await fetch(`${this.ragServiceUrl}/analyze-snippet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: filePath, code }),
         signal: controller.signal,
       }).finally(() => clearTimeout(timeoutId));
 
@@ -102,6 +120,16 @@ class QueryService {
       }
 
       const data = (await response.json()) as IngestResponse;
+      const data = (await response.json()) as SnippetAnalysisResult;
+      if (
+        !data ||
+        typeof data.file_path !== "string" ||
+        typeof data.summary !== "string" ||
+        typeof data.explanation !== "string"
+      ) {
+        return err("Invalid response from Python RAG service (analyze-snippet)");
+      }
+
       return ok(data);
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
@@ -111,6 +139,41 @@ class QueryService {
       return err(
         `Failed to ingest codebase via Python RAG service: ${message}`,
       );
+      return err(`Failed to query Python RAG service: ${message}`);
+    }
+  }
+
+  async ingestFiles(request: IngestRequest): Promise<Result<IngestResult, string>> {
+    try {
+      console.log(
+        `[ingestFiles] Forwarding to ${this.ragServiceUrl}/ingest (project_id=${request.project_id}, files=${request.files.length})`,
+      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300_000);
+      const response = await fetch(`${this.ragServiceUrl}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as IngestResult;
+      if (!data || typeof data.indexed !== "number") {
+        return err("Invalid response from Python RAG service (ingest)");
+      }
+
+      return ok(data);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 300 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to ingest files: ${message}`);
     }
   }
 }

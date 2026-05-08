@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 from config import config
 from constants import LLM_CONFIG, RETRIEVE_CODE_CHUNKS_TOOL, ERROR_MESSAGES
 from models.types_models import Chunk, ToolCall
+from services.llm.output_parser import parse_json_object, LlmOutputParseError
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,68 @@ class LlmClient:
                 logger.error(f"⏸️  Rate limit exceeded: {e}")
                 raise Exception(f"RATE_LIMIT: {str(e)}")
             raise Exception(f"Failed to generate with tool result: {str(e)}")
+
+    async def analyze_snippet(self, file_path: str, code: str) -> dict[str, str]:
+        """
+        Analyze a code snippet and return structured output.
+
+        Returns a dict with:
+          - summary: str
+          - explanation: str
+        """
+        if not file_path or not file_path.strip():
+            raise ValueError("file_path is required")
+        if not code or not code.strip():
+            raise ValueError("code is required")
+
+        system_prompt = (
+            "You are a senior code review assistant.\n"
+            "You will be given a file path and a code snippet from that file.\n"
+            "Return ONLY valid JSON (no markdown, no extra text) with exactly these keys:\n"
+            '{ "summary": string, "explanation": string }\n'
+            "\n"
+            "Formatting rules:\n"
+            "- summary: 1-3 short sentences, concrete, no speculation.\n"
+            "- explanation: concise but specific; reference identifiers exactly as written.\n"
+            "- If info is missing, say what is missing instead of guessing.\n"
+        )
+
+        user_prompt = (
+            f"File path: {file_path}\n\n"
+            "Code:\n"
+            "```text\n"
+            f"{code}\n"
+            "```"
+        )
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+            )
+
+            text = response.choices[0].message.content
+            if not text:
+                raise ValueError("No text content in LLM response")
+
+            obj = parse_json_object(text)
+            summary = obj.get("summary")
+            explanation = obj.get("explanation")
+            if not isinstance(summary, str) or not isinstance(explanation, str):
+                raise LlmOutputParseError("JSON must contain 'summary' and 'explanation' strings")
+
+            return {"summary": summary.strip(), "explanation": explanation.strip()}
+        except LlmOutputParseError as e:
+            raise Exception(f"Failed to parse LLM output: {str(e)}")
+        except Exception as e:
+            if self._is_rate_limit_error(e):
+                logger.error(f"⏸️  Rate limit exceeded: {e}")
+                raise Exception(f"RATE_LIMIT: {str(e)}")
+            raise Exception(f"Failed to analyze snippet: {str(e)}")
 
 
 # Global instance
