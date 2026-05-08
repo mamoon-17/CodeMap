@@ -12,6 +12,7 @@ class QueryService:
             request.query,
             request.top_k,
             request.project_id,
+            request.language,
         )
         return QueryResponse(
             query=result.query,

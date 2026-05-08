@@ -15,6 +15,7 @@ class QueryRequest(BaseModel):
         description="Number of code chunks to retrieve",
     )
     project_id: str = Field(..., min_length=1, description="Project identifier for scoped retrieval")
+    language: str | None = None
     
     @field_validator("query")
     @classmethod
@@ -31,6 +32,23 @@ class QueryRequest(BaseModel):
         if not v.strip():
             raise ValueError("project_id is required")
         return v.strip()
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str | None) -> str | None:
+        """Normalize and validate the optional language filter."""
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        if not normalized:
+            return None
+        allowed = {
+            "python", "javascript", "typescript", "java", "cpp", "c",
+            "go", "rust", "ruby", "php", "unknown",
+        }
+        if normalized not in allowed:
+            raise ValueError("unsupported language filter")
+        return normalized
 
 
 class SourceChunk(BaseModel):

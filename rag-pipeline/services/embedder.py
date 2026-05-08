@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 
@@ -53,6 +54,12 @@ try:
 except Exception:
     pass
 
+from services.chunker import smart_chunk_file
+
+
+def compute_file_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
 from services.chunker import chunk_file
 from services.chunk_store import init_db, delete_project, delete_file, upsert_chunks
 
@@ -67,7 +74,12 @@ CHUNK_WORKERS = max(2, min(4, (os.cpu_count() or 2)))
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        # Available models — set EMBEDDING_MODEL in .env to switch:
+        # all-MiniLM-L6-v2  — 22MB, fastest, 384 dims (default)
+        # all-MiniLM-L12-v2 — 33MB, slightly slower, better accuracy
+        # all-mpnet-base-v2  — 420MB, slowest, 768 dims, best accuracy
+        model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        _model = SentenceTransformer(model_name)
     return _model
 
 
@@ -113,6 +125,19 @@ def ingest_and_embed(
     model = _get_model()
     t_model = time.perf_counter() - t_model0
     total_chunks = 0
+    skipped_count = 0
+
+    for file in files:
+        file_hash = compute_file_hash(file.content)
+
+        existing = collection.get(where={"file_path": file.file_path}, limit=1)
+        existing_metas = existing.get("metadatas") or []
+        if existing_metas:
+            existing_hash = (existing_metas[0] or {}).get("file_hash")
+            if existing_hash == file_hash:
+                skipped_count += 1
+                continue
+
     file_count = 0
     t_chunk = 0.0
     t_chunk_store = 0.0
@@ -170,7 +195,7 @@ def ingest_and_embed(
         ]
             collection.delete(where={"file_path": file.file_path})
 
-        chunks = chunk_file(file.file_path, file.content)
+        chunks = smart_chunk_file(file.file_path, file.content)
 
         for chunk in chunks:
             embedding = model.encode(chunk["text"], show_progress_bar=False).tolist()
@@ -187,11 +212,14 @@ def ingest_and_embed(
                         "start_line": chunk["start_line"],
                         "end_line": chunk["end_line"],
                         "project_id": project_id,
+                        "file_hash": file_hash,
+                        "language": chunk["language"],
                     }
                 ],
             )
             total_chunks += 1
 
+    return {"indexed": total_chunks, "skipped_files": skipped_count}
         t2 = time.perf_counter()
         embeddings = model.encode(
             texts,
@@ -233,6 +261,7 @@ def retrieve_similar_chunks(
     query_text: str,
     top_k: int,
     project_id: str | None = None,
+    language: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks from one project or across all project collections."""
     client = _get_chroma_client()
@@ -245,16 +274,29 @@ def retrieve_similar_chunks(
     else:
         collections = client.list_collections()
 
+    where: dict = {}
+    if project_id and language:
+        where = {"$and": [{"project_id": project_id},
+                          {"language": language}]}
+    elif project_id:
+        where = {"project_id": project_id}
+    elif language:
+        where = {"language": language}
+
     matches: list[dict[str, Any]] = []
     for collection in collections:
         if hasattr(collection, "count") and collection.count() == 0:
             continue
 
-        result = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs: dict[str, Any] = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            query_kwargs["where"] = where
+
+        result = collection.query(**query_kwargs)
 
         ids = result.get("ids", [[]])[0]
         docs = result.get("documents", [[]])[0]
