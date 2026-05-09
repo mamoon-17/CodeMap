@@ -168,6 +168,56 @@ def project_file_paths(project_id: str, page_size: int = 2000) -> list[str]:
     return sorted(file_paths, key=lambda path: path.lower())
 
 
+def project_file_content(project_id: str, file_path: str) -> dict[str, Any] | None:
+    """Return indexed chunks and reconstructed content for one project file."""
+    collection = get_or_create_collection(project_id)
+    result = collection.get(
+        where={"file_path": file_path},
+        include=["documents", "metadatas"],
+    )
+
+    documents = result.get("documents") or []
+    metadatas = result.get("metadatas") or []
+    chunks: list[dict[str, Any]] = []
+
+    for idx, document in enumerate(documents):
+        metadata = metadatas[idx] if idx < len(metadatas) else {}
+        if not isinstance(metadata, dict):
+            continue
+        if metadata.get("project_id") != project_id:
+            continue
+        if metadata.get("file_path") != file_path:
+            continue
+        chunks.append({
+            "start_line": int(metadata.get("start_line") or 1),
+            "end_line": int(metadata.get("end_line") or 1),
+            "text": document if isinstance(document, str) else "",
+        })
+
+    if not chunks:
+        return None
+
+    chunks.sort(key=lambda chunk: (chunk["start_line"], chunk["end_line"]))
+    content_parts: list[str] = []
+    last_end_line = 0
+    for chunk in chunks:
+        text = chunk["text"]
+        if chunk["start_line"] <= last_end_line:
+            # Line-window chunks can overlap; trim duplicate leading lines.
+            overlap = last_end_line - chunk["start_line"] + 1
+            text = "".join(text.splitlines(keepends=True)[overlap:])
+        if text:
+            content_parts.append(text)
+        last_end_line = max(last_end_line, chunk["end_line"])
+
+    return {
+        "project_id": project_id,
+        "file_path": file_path,
+        "content": "".join(content_parts),
+        "chunks": chunks,
+    }
+
+
 def ingest_and_embed(
     files: Iterable[Any],
     project_id: str,

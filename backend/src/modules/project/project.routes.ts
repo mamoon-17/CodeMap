@@ -15,6 +15,10 @@ router.post("/:id/retry", (req, res) => projectController.retry(req, res));
 
 router.get("/:id/files", (req, res) => projectController.listFiles(req, res));
 
+router.get("/:id/files/content", (req, res) =>
+  projectController.getFileContent(req, res),
+);
+
 router.delete("/:id/vectors", (req, res) =>
   projectController.deleteVectors(req, res),
 );

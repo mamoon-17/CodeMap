@@ -1,6 +1,7 @@
 import type {
   IngestRequest,
   IngestResponse,
+  ProjectFileContentResponse,
   ProjectFilesResponse,
   QueryRequest,
   QueryResponse,
@@ -77,6 +78,25 @@ export async function getProjectFiles(
   }
 
   return payload as ProjectFilesResponse;
+}
+
+export async function getProjectFileContent(
+  projectId: string,
+  filePath: string,
+): Promise<ProjectFileContentResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(filePath)}`,
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as ProjectFileContentResponse;
 }
 
 export async function startReindex(

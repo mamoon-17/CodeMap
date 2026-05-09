@@ -15,7 +15,12 @@ import {
   PanelRightOpen,
   Loader2,
 } from "lucide-react";
-import { getProjectFiles, ingestCodebase, queryCodebase } from "@/services/api";
+import {
+  getProjectFileContent,
+  getProjectFiles,
+  ingestCodebase,
+  queryCodebase,
+} from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 
@@ -87,34 +92,61 @@ const buildFileTree = (filePaths: string[]): TreeNode[] => {
   return root;
 };
 
+const getAncestorFolderPaths = (filePath: string) => {
+  const parts = filePath.split(/[\\/]+/).filter(Boolean);
+  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
+};
+
 const FileTreeItem = ({
   node,
   depth = 0,
   onSelect,
+  onToggle,
+  expandedFolders,
+  selectedFilePath,
+  isOpening,
 }: {
   node: TreeNode;
   depth?: number;
-  onSelect: (name: string) => void;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+  expandedFolders: Set<string>;
+  selectedFilePath: string | null;
+  isOpening: boolean;
 }) => {
-  const [open, setOpen] = useState(depth < 1);
-
   if (node.type === "file") {
+    const selected = selectedFilePath === node.path;
+
     return (
       <button
         onClick={() => onSelect(node.path)}
-        className="flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        disabled={isOpening}
+        className={`flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-wait ${
+          selected
+            ? "bg-secondary text-foreground"
+            : "text-muted-foreground"
+        }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <File size={13} className="shrink-0 text-muted-foreground/60" />
+        <File
+          size={13}
+          className={`shrink-0 ${selected ? "text-primary" : "text-muted-foreground/60"}`}
+        />
         <span className="truncate font-mono">{node.name}</span>
+        {selected && isOpening && (
+          <Loader2 size={12} className="ml-auto shrink-0 animate-spin" />
+        )}
       </button>
     );
   }
 
+  const open = expandedFolders.has(node.path);
+
   return (
     <div>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => onToggle(node.path)}
+        aria-expanded={open}
         className="flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-secondary"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
@@ -141,6 +173,10 @@ const FileTreeItem = ({
             node={child}
             depth={depth + 1}
             onSelect={onSelect}
+            onToggle={onToggle}
+            expandedFolders={expandedFolders}
+            selectedFilePath={selectedFilePath}
+            isOpening={isOpening}
           />
         ))}
     </div>
@@ -186,6 +222,10 @@ const Query = () => {
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
   const [isFileTreeLoading, setIsFileTreeLoading] = useState(false);
   const [fileTreeError, setFileTreeError] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [isOpeningFile, setIsOpeningFile] = useState(false);
+  const [openFileError, setOpenFileError] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
@@ -222,7 +262,12 @@ const Query = () => {
 
     try {
       const response = await getProjectFiles(trimmedProjectId);
-      setFileTree(buildFileTree(response.files));
+      const nextTree = buildFileTree(response.files);
+      setFileTree(nextTree);
+      setExpandedFolders((prev) => {
+        if (prev.size > 0) return prev;
+        return new Set(nextTree.filter((node) => node.type === "folder").map((node) => node.path));
+      });
     } catch (error) {
       setFileTree([]);
       setFileTreeError(
@@ -236,6 +281,51 @@ const Query = () => {
   useEffect(() => {
     void loadProjectFiles(queryProjectId);
   }, [queryProjectId, loadProjectFiles]);
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const openFileFromTree = async (path: string) => {
+    const trimmedProjectId = queryProjectId.trim();
+    if (!trimmedProjectId || isOpeningFile) return;
+
+    setSelectedFilePath(path);
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      getAncestorFolderPaths(path).forEach((folderPath) => next.add(folderPath));
+      return next;
+    });
+    setOpenFileError(null);
+    setIsOpeningFile(true);
+
+    try {
+      const response = await getProjectFileContent(trimmedProjectId, path);
+      setSelectedRef({
+        file: response.file_path,
+        lines:
+          response.chunks.length === 1
+            ? `Lines ${response.chunks[0].start_line}-${response.chunks[0].end_line}`
+            : `${response.chunks.length} indexed chunks`,
+        snippet: response.content || "(Indexed file has no displayable content.)",
+      });
+      setShowCodePanel(true);
+    } catch (error) {
+      setOpenFileError(
+        error instanceof Error ? error.message : "Failed to open indexed file",
+      );
+    } finally {
+      setIsOpeningFile(false);
+    }
+  };
 
   const handleMouseMoveLeft = useCallback(
     (e: MouseEvent) => {
@@ -330,6 +420,14 @@ const Query = () => {
       // Auto-select first reference if available
       if (references && references.length > 0) {
         setSelectedRef(references[0]);
+        setSelectedFilePath(references[0].file);
+        setExpandedFolders((prev) => {
+          const next = new Set(prev);
+          getAncestorFolderPaths(references[0].file).forEach((folderPath) =>
+            next.add(folderPath),
+          );
+          return next;
+        });
         setShowCodePanel(true);
       }
     } catch (error) {
@@ -451,6 +549,11 @@ const Query = () => {
               </div>
             </div>
             <div className="py-1">
+              {openFileError && (
+                <div className="px-3 py-2 text-xs text-destructive">
+                  {openFileError}
+                </div>
+              )}
               {isFileTreeLoading ? (
                 <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
                   <Loader2 size={13} className="animate-spin" />
@@ -469,7 +572,11 @@ const Query = () => {
                   <FileTreeItem
                     key={node.path}
                     node={node}
-                    onSelect={() => {}}
+                    onSelect={openFileFromTree}
+                    onToggle={toggleFolder}
+                    expandedFolders={expandedFolders}
+                    selectedFilePath={selectedFilePath}
+                    isOpening={isOpeningFile}
                   />
                 ))
               )}
@@ -662,6 +769,14 @@ const Query = () => {
                             key={ref.file + ref.lines}
                             onClick={() => {
                               setSelectedRef(ref);
+                              setSelectedFilePath(ref.file);
+                              setExpandedFolders((prev) => {
+                                const next = new Set(prev);
+                                getAncestorFolderPaths(ref.file).forEach((folderPath) =>
+                                  next.add(folderPath),
+                                );
+                                return next;
+                              });
                               setShowCodePanel(true);
                             }}
                             className="flex w-full items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-secondary group"

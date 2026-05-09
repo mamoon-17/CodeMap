@@ -1,7 +1,12 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from models.schemas import ErrorResponse
-from services.embedder import project_stats, delete_project_vectors, project_file_paths
+from services.embedder import (
+    project_stats,
+    delete_project_vectors,
+    project_file_paths,
+    project_file_content,
+)
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -31,6 +36,22 @@ def get_project_stats(project_id: str):
 def get_project_files(project_id: str):
     """Return indexed file paths for repository navigation."""
     return {"project_id": project_id, "files": project_file_paths(project_id)}
+
+
+@router.get(
+    "/{project_id}/files/content",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse, "description": "File not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+def get_project_file_content(project_id: str, path: str = Query(..., min_length=1)):
+    """Return indexed content for a selected repository file."""
+    result = project_file_content(project_id, path)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Indexed file not found")
+    return result
 
 
 @router.delete(
