@@ -32,6 +32,7 @@ import {
   queryCodebase,
 } from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
+import { LogoHomeLink } from "@/components/LogoHomeLink";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
@@ -582,16 +583,7 @@ const Query = () => {
       <nav className="shrink-0 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-                <span className="text-xs font-bold text-primary-foreground font-mono">
-                  &lt;/&gt;
-                </span>
-              </div>
-              <span className="text-lg font-semibold tracking-tight text-foreground">
-                CodeMap
-              </span>
-            </div>
+            <LogoHomeLink />
             <span className="text-muted-foreground/40">/</span>
             <span className="text-sm font-medium text-foreground font-mono">
               Query Interface

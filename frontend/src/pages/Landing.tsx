@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Terminal,
 } from "lucide-react";
+import { LogoHomeLink } from "@/components/LogoHomeLink";
 
 const features = [
   {
@@ -98,16 +99,7 @@ const Landing = () => {
       {/* Navbar */}
       <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold text-primary-foreground font-mono">
-                &lt;/&gt;
-              </span>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              CodeMap
-            </span>
-          </Link>
+          <LogoHomeLink />
           <div className="flex items-center gap-2">
             <Link
               to="/login"

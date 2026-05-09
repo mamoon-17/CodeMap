@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
 import { getReindexStatus, startReindex, retryProjectIndex } from "@/services/api";
+import { LogoHomeLink } from "@/components/LogoHomeLink";
 
 interface Repo {
   id: string;
@@ -457,16 +458,7 @@ const Dashboard = () => {
       {/* Navbar */}
       <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold text-primary-foreground font-mono">
-                &lt;/&gt;
-              </span>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              CodeMap
-            </span>
-          </Link>
+          <LogoHomeLink />
           <div className="relative">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
