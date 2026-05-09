@@ -12,6 +12,10 @@ export interface IngestResult {
   indexed: number;
 }
 
+export interface DeleteVectorsResult {
+  deleted: boolean;
+}
+
 class QueryService {
   private ragServiceUrl: string;
 
@@ -185,6 +189,36 @@ class QueryService {
       }
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to ingest files: ${message}`);
+    }
+  }
+
+  async deleteProjectVectors(
+    projectId: string,
+  ): Promise<Result<DeleteVectorsResult, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+      const response = await fetch(
+        `${this.ragServiceUrl}/projects/${encodeURIComponent(projectId)}/vectors`,
+        {
+          method: "DELETE",
+          signal: controller.signal,
+        },
+      ).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as { deleted?: boolean };
+      return ok({ deleted: Boolean(data?.deleted) });
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 30 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to delete vectors via Python RAG service: ${message}`);
     }
   }
 }

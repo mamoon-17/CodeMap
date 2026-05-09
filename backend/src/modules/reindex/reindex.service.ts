@@ -42,6 +42,21 @@ const MAX_FILE_BYTES = 250_000;
 const MAX_SKIPPED_FILES_LOG = 50;
 const MAX_RETRIES = 3;
 const MAX_JOB_LOGS = 200;
+const IGNORED_DIR_SEGMENTS = [
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".git",
+] as const;
 
 // Prevent duplicate job creation when multiple tabs click "Re-index" simultaneously.
 // This is a best-effort single-instance lock (sufficient for local dev).
@@ -98,6 +113,11 @@ function isProbablyBinary(buf: Buffer): boolean {
     if (!isAllowed) suspicious += 1;
   }
   return sample.length > 0 && suspicious / sample.length > 0.2;
+}
+
+function shouldIgnorePath(relPosixPath: string): boolean {
+  const parts = relPosixPath.split("/").filter(Boolean);
+  return parts.some((p) => (IGNORED_DIR_SEGMENTS as readonly string[]).includes(p));
 }
 
 function walkDir(dir: string): string[] {
@@ -370,13 +390,21 @@ export class ReindexService {
       for (const fullPath of filePaths) {
         if (acceptedFiles >= MAX_FILES_PER_REINDEX) break;
 
+        const rel = path
+          .relative(repoRoot, fullPath)
+          .split(path.sep)
+          .join("/");
+        if (shouldIgnorePath(rel)) {
+          skippedFilesCount += 1;
+          if (skippedFiles.length < MAX_SKIPPED_FILES_LOG) {
+            skippedFiles.push({ file: rel, reason: "ignored_dir" });
+          }
+          continue;
+        }
+
         const stat = fs.statSync(fullPath);
         if (stat.size > MAX_FILE_BYTES) {
           skippedFilesCount += 1;
-          const rel = path
-            .relative(repoRoot, fullPath)
-            .split(path.sep)
-            .join("/");
           if (skippedFiles.length < MAX_SKIPPED_FILES_LOG) {
             skippedFiles.push({
               file: rel,
@@ -385,11 +413,6 @@ export class ReindexService {
           }
           continue;
         }
-
-        const rel = path
-          .relative(repoRoot, fullPath)
-          .split(path.sep)
-          .join("/");
 
         const raw = fs.readFileSync(fullPath);
         if (isProbablyBinary(raw)) {

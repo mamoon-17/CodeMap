@@ -12,12 +12,12 @@ import {
   LogOut,
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
-import { getReindexStatus, startReindex } from "@/services/api";
+import { getReindexStatus, startReindex, retryProjectIndex } from "@/services/api";
 
 interface Repo {
   id: string;
   name: string;
-  status: "indexed" | "processing" | "available";
+  status: "indexed" | "processing" | "available" | "failed";
   lastUpdated: string;
   lastIndexedAt: string | null;
   hasChanges: boolean;
@@ -26,6 +26,7 @@ interface Repo {
   language?: string;
   size?: number;
   source: "github" | "upload";
+  lastError?: string;
 }
 
 type ReindexUiState =
@@ -73,9 +74,10 @@ const PROJECT_CONTEXTS_KEY = "projectContexts";
 
 function mapStatus(
   backendStatus: string,
-): "indexed" | "processing" | "available" {
+): "indexed" | "processing" | "available" | "failed" {
   if (backendStatus === "ready") return "indexed";
   if (backendStatus === "indexing") return "processing";
+  if (backendStatus === "failed") return "failed";
   return "processing";
 }
 
@@ -110,6 +112,8 @@ const Dashboard = () => {
   const [reindexUiByRepo, setReindexUiByRepo] = useState<
     Record<string, ReindexUiState>
   >({});
+  const [retryingUploadId, setRetryingUploadId] = useState<string | null>(null);
+  const [uploadRetryErrorById, setUploadRetryErrorById] = useState<Record<string, string>>({});
   const [expandedSkipsRepoId, setExpandedSkipsRepoId] = useState<string | null>(
     null,
   );
@@ -342,16 +346,22 @@ const Dashboard = () => {
                   name: data.project.name,
                   status: mapStatus(data.project.status),
                   lastUpdated: "Just now",
-                  lastIndexedAt: new Date().toISOString(),
+                  lastIndexedAt:
+                    data.project.status === "ready"
+                      ? new Date().toISOString()
+                      : null,
                   hasChanges: false,
                   needsReindex: false,
                   files: data.fileCount ?? 0,
                   source: "upload",
+                  lastError: data.error || undefined,
                 }
               : r,
           ),
         );
-        setActiveProject(data.project.id, data.project.name, "upload");
+        if (data.project.status === "ready") {
+          setActiveProject(data.project.id, data.project.name, "upload");
+        }
         setUploadStatus("idle");
       } catch (e) {
         // Remove the temp card on failure and reopen modal with error
@@ -388,6 +398,47 @@ const Dashboard = () => {
 
     setActiveProject(selectedRepo.id, selectedRepo.name, selectedRepo.source);
     navigate("/query");
+  };
+
+  const handleRetryUploadIndex = async (projectId: string) => {
+    setRetryingUploadId(projectId);
+    setUploadRetryErrorById((prev) => ({ ...prev, [projectId]: "" }));
+    setRepos((prev) =>
+      prev.map((r) =>
+        r.id === projectId
+          ? { ...r, status: "processing", lastError: undefined }
+          : r,
+      ),
+    );
+
+    try {
+      const result = await retryProjectIndex(projectId);
+
+      setRepos((prev) =>
+        prev.map((r) =>
+          r.id === projectId
+            ? {
+                ...r,
+                status: mapStatus(result.project.status),
+                files: result.fileCount ?? r.files,
+                lastIndexedAt: new Date().toISOString(),
+                lastUpdated: "Just now",
+              }
+            : r,
+        ),
+      );
+      setActiveProject(result.project.id, result.project.name, "upload");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Retry failed";
+      setUploadRetryErrorById((prev) => ({ ...prev, [projectId]: msg }));
+      setRepos((prev) =>
+        prev.map((r) =>
+          r.id === projectId ? { ...r, status: "failed", lastError: msg } : r,
+        ),
+      );
+    } finally {
+      setRetryingUploadId(null);
+    }
   };
 
   const initialLetter = (
@@ -559,7 +610,7 @@ const Dashboard = () => {
                       {repo.name}
                     </h3>
                     <div className="mt-2 flex items-center gap-3">
-                      {repo.status === "indexed" ? (
+                    {repo.status === "indexed" ? (
                         <span className="inline-flex items-center gap-1 text-xs text-success">
                           <Check size={12} />
                           Indexed
@@ -569,6 +620,11 @@ const Dashboard = () => {
                           <Loader2 size={12} className="animate-spin" />
                           Processing
                         </span>
+                    ) : repo.status === "failed" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-destructive">
+                        <X size={12} />
+                        Index failed
+                      </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <Github size={12} />
@@ -614,6 +670,31 @@ const Dashboard = () => {
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       Indexing repository…
                     </p>
+                  </div>
+                )}
+                {repo.status === "failed" && repo.source === "upload" && (
+                  <div className="mt-3">
+                    <div className="rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive">
+                      Indexing failed{repo.lastError ? `: ${repo.lastError}` : "."}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRetryUploadIndex(repo.id)}
+                      disabled={retryingUploadId === repo.id}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-60"
+                    >
+                      {retryingUploadId === repo.id ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Retrying…
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={14} />
+                          Retry indexing
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
                 {repo.status === "indexed" && (
