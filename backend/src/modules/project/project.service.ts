@@ -37,21 +37,55 @@ const SUPPORTED_EXTENSIONS = new Set([
 const STORAGE_BUCKET = "codemap-projects";
 const MAX_FILES_PER_UPLOAD = 500;
 const MAX_FILE_BYTES = 250_000;
+const MAX_FILTERED_ZIP_BYTES = 50 * 1024 * 1024;
+const FILTERED_ZIP_TOO_LARGE_MESSAGE =
+  "Upload failed: up to 50 MB source files are supported.";
 
 const IGNORED_DIR_SEGMENTS = [
   "node_modules",
+  "bower_components",
+  "jspm_packages",
+  ".pnpm",
+  ".yarn",
   "dist",
   "build",
+  "out",
+  "coverage",
+  ".nyc_output",
   ".next",
+  ".nuxt",
+  ".svelte-kit",
   ".turbo",
   ".cache",
   ".venv",
   "venv",
+  "env",
+  "ENV",
+  "site-packages",
   "__pycache__",
   ".pytest_cache",
   ".mypy_cache",
   ".ruff_cache",
+  ".tox",
+  ".nox",
+  ".eggs",
+  ".gradle",
+  "target",
+  "bin",
+  "obj",
   ".git",
+  ".svn",
+  ".hg",
+] as const;
+
+const IGNORED_FILE_NAMES = [
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "poetry.lock",
+  "pipfile.lock",
+  "composer.lock",
+  "cargo.lock",
 ] as const;
 
 function sanitizeForKey(input: string): string {
@@ -68,7 +102,16 @@ function normalizeZipEntryPath(entryName: string): string {
 
 function shouldIgnorePath(normalizedPosixPath: string): boolean {
   const parts = normalizedPosixPath.split("/").filter(Boolean);
-  return parts.some((p) => (IGNORED_DIR_SEGMENTS as readonly string[]).includes(p));
+  const loweredParts = parts.map((part) => part.toLowerCase());
+  const fileName = loweredParts[loweredParts.length - 1];
+  return (
+    loweredParts.some((p) =>
+      (IGNORED_DIR_SEGMENTS as readonly string[]).includes(p),
+    ) ||
+    (fileName
+      ? (IGNORED_FILE_NAMES as readonly string[]).includes(fileName)
+      : false)
+  );
 }
 
 function isUnsafeZipEntryPath(entryName: string): boolean {
@@ -114,9 +157,13 @@ function isZipFile(zipPath: string): boolean {
 function buildIngestPayloadFromZip(zip: AdmZip): {
   files: Array<{ file_path: string; content: string }>;
   filePaths: string[];
+  filteredZipBytes: Buffer;
+  indexableBytes: number;
 } {
   const files: Array<{ file_path: string; content: string }> = [];
   const filePaths: string[] = [];
+  const filteredZip = new AdmZip();
+  let indexableBytes = 0;
 
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
@@ -134,13 +181,18 @@ function buildIngestPayloadFromZip(zip: AdmZip): {
     const data = entry.getData();
     if (data.length > MAX_FILE_BYTES) continue;
     if (isProbablyBinary(data)) continue;
+    if (indexableBytes + data.length > MAX_FILTERED_ZIP_BYTES) {
+      throw new Error(FILTERED_ZIP_TOO_LARGE_MESSAGE);
+    }
     if (files.length >= MAX_FILES_PER_UPLOAD) break;
     const content = data.toString("utf8");
     files.push({ file_path: normalized, content });
     filePaths.push(normalized);
+    filteredZip.addFile(normalized, data);
+    indexableBytes += data.length;
   }
 
-  return { files, filePaths };
+  return { files, filePaths, filteredZipBytes: filteredZip.toBuffer(), indexableBytes };
 }
 
 class ProjectService {
@@ -185,17 +237,6 @@ class ProjectService {
         return err("Upload failed: File is not a valid ZIP archive");
       }
 
-      // Upload zip to Supabase Storage first (crash-safe holding area)
-      const keyName = sanitizeForKey(originalFilename || `${name}.zip`);
-      storagePath = `projects/${saved.id}/${Date.now()}-${keyName}`;
-      const zipBytes = await fs.promises.readFile(zipPath);
-      await uploadObject(STORAGE_BUCKET, storagePath, zipBytes, {
-        contentType: "application/zip",
-        upsert: false,
-      });
-      saved.zipStoragePath = storagePath;
-      await repo.save(saved);
-
       let zip: AdmZip;
       try {
         zip = new AdmZip(zipPath);
@@ -205,12 +246,22 @@ class ProjectService {
         return err("Upload failed: Corrupt or unreadable ZIP archive");
       }
 
-      const { files, filePaths } = buildIngestPayloadFromZip(zip);
+      const { files, filePaths, filteredZipBytes } = buildIngestPayloadFromZip(zip);
       if (files.length === 0) {
         return err(
           "Upload failed: No supported source files found in ZIP (allowed: .js, .ts, .py, .java, .cpp, .c, .cs, .go, .rb, .php, .swift, .kt, .rs, .html, .css, .json, .xml, .yaml, .yml)",
         );
       }
+
+      // Store only the filtered retry archive, not ignored folders/files.
+      const keyName = sanitizeForKey(originalFilename || `${name}.zip`);
+      storagePath = `projects/${saved.id}/${Date.now()}-${keyName}`;
+      await uploadObject(STORAGE_BUCKET, storagePath, filteredZipBytes, {
+        contentType: "application/zip",
+        upsert: false,
+      });
+      saved.zipStoragePath = storagePath;
+      await repo.save(saved);
 
       const ingestResult = await queryService.ingestFiles({
         project_id: saved.id,

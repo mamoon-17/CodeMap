@@ -38,6 +38,18 @@ function createZipBytes() {
     Buffer.from(`export const ignored = "${marker}";\n`, "utf8"),
   );
   zip.addFile(
+    ".venv/lib/python3.12/site-packages/pkg/module.py",
+    Buffer.from(`def ignored_venv():\n    return "${marker}"\n`, "utf8"),
+  );
+  zip.addFile(
+    "__pycache__/cached.py",
+    Buffer.from(`def ignored_cache():\n    return "${marker}"\n`, "utf8"),
+  );
+  zip.addFile(
+    "package-lock.json",
+    Buffer.from(`{"ignored": "${marker}"}\n`, "utf8"),
+  );
+  zip.addFile(
     "README.md",
     Buffer.from(`# Not indexed\n${marker}\n`, "utf8"),
   );
@@ -94,6 +106,18 @@ async function run() {
     ) {
       throw new Error(`Expected uploaded file in project files. Got: ${JSON.stringify(filesJson)}`);
     }
+  const ignoredPathFragments = [
+    "node_modules/",
+    ".venv/",
+    "__pycache__/",
+    "package-lock.json",
+  ];
+  const hasIgnoredFile = filesJson.files.some((file) =>
+    ignoredPathFragments.some((fragment) => String(file).includes(fragment)),
+  );
+  if (hasIgnoredFile) {
+    throw new Error(`Expected dependency/cache files to be ignored. Got: ${JSON.stringify(filesJson.files)}`);
+  }
 
     console.log("[project-upload] validating indexed file content...");
     const fileContentResponse = await fetch(
@@ -142,8 +166,13 @@ async function run() {
     const hasNodeModulesSource = queryJson.sources.some(
       (source) => typeof source.file === "string" && source.file.includes("node_modules/"),
     );
-    if (hasNodeModulesSource) {
-      throw new Error("Expected node_modules/ files to be ignored during ingestion.");
+  const hasIgnoredSource = queryJson.sources.some(
+    (source) =>
+      typeof source.file === "string" &&
+      ignoredPathFragments.some((fragment) => source.file.includes(fragment)),
+  );
+  if (hasNodeModulesSource || hasIgnoredSource) {
+    throw new Error("Expected dependency/cache files to be ignored during ingestion.");
     }
 
     console.log("[project-upload] PASS");

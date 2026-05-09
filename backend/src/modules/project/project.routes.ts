@@ -2,13 +2,15 @@ import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
 import { projectController } from "./project.controller";
 
-const MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_RAW_ZIP_UPLOAD_BYTES = 250 * 1024 * 1024;
 const ZIP_TOO_LARGE_MESSAGE =
-  "ZIP file is too large. Please upload a repository archive under 50 MB and remove folders like node_modules, .git, dist, build, or .venv.";
+  "ZIP file is too large. Up to 50 MB source files are supported.";
 
 const upload = multer({
   dest: "uploads/",
-  limits: { fileSize: MAX_ZIP_UPLOAD_BYTES },
+  // The real 50 MB application limit is enforced after ignored ZIP contents
+  // are removed. This raw cap only protects the server from huge requests.
+  limits: { fileSize: MAX_RAW_ZIP_UPLOAD_BYTES },
 });
 const router = Router();
 
