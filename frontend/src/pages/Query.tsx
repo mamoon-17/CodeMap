@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import { ingestCodebase, queryCodebase } from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
@@ -570,9 +573,14 @@ const Query = () => {
                     {msg.role === "user" ? "U" : "AI"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
+                    <div className="text-sm text-foreground leading-relaxed prose prose-sm max-w-none prose-pre:bg-muted/40 prose-pre:border prose-pre:border-border prose-pre:rounded-md prose-code:font-mono prose-code:text-foreground">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeSanitize]}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
 
                     {msg.tool_used !== undefined && (
                       <div className="mt-2 text-xs text-muted-foreground">

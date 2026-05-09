@@ -42,7 +42,7 @@ class LlmClient:
         )
     
     async def generate_with_tools(
-        self, user_query: str
+        self, user_query: str, project_id: str | None = None
     ) -> Union[dict[str, str], dict[str, ToolCall]]:
         """
         Agentic generation: LLM decides whether to call retrieve_code_chunks
@@ -53,12 +53,24 @@ class LlmClient:
             {"type": "tool_call", "call": ToolCall}
         """
         try:
+            has_project = bool(project_id and str(project_id).strip())
+            system_prompt = (
+                "You are a codebase question-answering assistant.\n"
+                "If the user asks about this repository's code (files, functions, routes, server startup, config, behavior), "
+                "you MUST call the retrieve_code_chunks tool before answering.\n"
+                "Only answer directly without tools for purely general programming questions that do not depend on this repository.\n"
+            )
+            if has_project:
+                system_prompt += (
+                    f"\nActive repository scope: project_id={project_id}\n"
+                    "Stay tightly grounded in this repository. Do not guess.\n"
+                )
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful coding assistant that analyzes codebases. When asked about specific code implementation or files, use the retrieve_code_chunks function. For general programming questions, answer directly without using tools."
+                        "content": system_prompt
                     },
                     {
                         "role": "user",
@@ -100,7 +112,7 @@ class LlmClient:
             raise Exception(f"Failed to generate with tools: {str(e)}")
     
     async def generate_with_tool_result(
-        self, user_query: str, chunks: list[Chunk]
+        self, user_query: str, chunks: list[Chunk], project_id: str | None = None
     ) -> str:
         """
         Second LLM call after tool execution with retrieved chunks
@@ -114,6 +126,15 @@ class LlmClient:
         """
         try:
             # Format chunks for the LLM
+            repo_header = ""
+            if project_id and str(project_id).strip():
+                repo_header = (
+                    f"Repository scope: project_id={project_id}\n"
+                    "Grounding rules:\n"
+                    "- Use ONLY the provided code chunks as evidence.\n"
+                    "- If the chunks do not contain the answer, say so and suggest what to search next.\n"
+                    "- Cite file paths exactly as given.\n\n"
+                )
             chunks_text = "\n\n".join([
                 f"File: {c.metadata.file}\nScore: {c.score}\nCode:\n{c.metadata.text}"
                 for c in chunks
@@ -124,7 +145,12 @@ class LlmClient:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful coding assistant. Use the provided code chunks to answer the user's question accurately. Reference specific files and explain the code clearly."
+                        "content": (
+                            "You are a repository-grounded coding assistant.\n"
+                            "Answer the user using the retrieved code chunks.\n"
+                            "Prefer pointing to the exact entrypoint / function / route definitions.\n"
+                            "Avoid generic explanations when code evidence exists.\n"
+                        )
                     },
                     {
                         "role": "user",
@@ -147,7 +173,7 @@ class LlmClient:
                     {
                         "role": "tool",
                         "tool_call_id": "call_retrieve",
-                        "content": f"Found {len(chunks)} relevant code chunks:\n\n{chunks_text}"
+                        "content": f"{repo_header}Found {len(chunks)} relevant code chunks:\n\n{chunks_text}"
                     }
                 ],
                 temperature=LLM_CONFIG["TEMPERATURE"],
