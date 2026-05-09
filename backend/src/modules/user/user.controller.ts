@@ -90,6 +90,39 @@ class UserController {
       next(error);
     }
   };
+
+  deleteMe = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required.",
+        });
+        return;
+      }
+
+      const result = await userService.deleteUser(req.user.id);
+
+      result.match(
+        () => {
+          res.status(200).json({
+            success: true,
+            message: "Account deleted successfully.",
+          });
+        },
+        (error) => {
+          if (error.includes("User not found")) {
+            res.status(404).json({ success: false, error });
+            return;
+          }
+
+          next(new Error(error));
+        },
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 export const userController = new UserController();

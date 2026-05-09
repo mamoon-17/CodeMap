@@ -227,6 +227,22 @@ class UserService {
     }
   }
 
+  async deleteUser(userId: string): Promise<Result<void, string>> {
+    try {
+      const repo = this.getRepo();
+      const result = await repo.delete({ id: userId });
+
+      if (!result.affected) {
+        return err("User not found");
+      }
+
+      return ok(undefined);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to delete user: ${message}`);
+    }
+  }
+
   async listGithubRepos(
     userId: string,
     options: ListGithubReposOptions = {},

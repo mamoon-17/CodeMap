@@ -8,11 +8,17 @@ import { AuthProvider, User } from "../user/user.entity";
 import { config } from "../../config/config";
 import crypto from "crypto";
 
-type OAuthIntent = "login" | "signup";
+type OAuthIntent = "login" | "signup" | "connect";
 
 export class AuthController {
   private resolveOAuthIntent(value: unknown): OAuthIntent {
-    return value === "signup" ? "signup" : "login";
+    if (value === "signup") {
+      return "signup";
+    }
+    if (value === "connect") {
+      return "connect";
+    }
+    return "login";
   }
 
   private buildCallbackUrl(req: Request, provider: "google" | "github"): string {

@@ -17,6 +17,12 @@ router.get(
 	(req, res, next) => authMiddleware.requireNonGuest(req, res, next),
 	userController.listGithubRepos,
 );
+router.delete(
+  "/me",
+  (req, res, next) => authMiddleware.requireAuth(req, res, next),
+  (req, res, next) => authMiddleware.requireNonGuest(req, res, next),
+  userController.deleteMe,
+);
 
 // Protected routes (authentication required)
 // Example: Get current user profile
