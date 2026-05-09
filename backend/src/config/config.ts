@@ -9,6 +9,8 @@ dotenv.config({
 
 export class Config {
   private SUPABASE_URI?: string;
+  private SUPABASE_URL?: string;
+  private SUPABASE_SERVICE_ROLE_KEY?: string;
   private PORT?: number;
   private FRONTEND_URL?: string;
   private RAG_SERVICE_URL?: string;
@@ -22,6 +24,8 @@ export class Config {
 
   constructor() {
     this.SUPABASE_URI = process.env.SUPABASE_URI;
+    this.SUPABASE_URL = process.env.SUPABASE_URL;
+    this.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const port = process.env.PORT;
     this.PORT = port ? parseInt(port, 10) : undefined;
     this.FRONTEND_URL = process.env.FRONTEND_URL;
@@ -42,6 +46,8 @@ export class Config {
     const missing: string[] = [];
 
     if (!this.SUPABASE_URI) missing.push("SUPABASE_URI");
+    if (!this.SUPABASE_URL) missing.push("SUPABASE_URL");
+    if (!this.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
     if (!this.PORT) missing.push("PORT");
     // Note: GEMINI_API_KEY is now only needed in Python service
 
@@ -57,6 +63,14 @@ export class Config {
 
   getSupabaseUri() {
     return this.SUPABASE_URI;
+  }
+
+  getSupabaseUrl() {
+    return this.SUPABASE_URL;
+  }
+
+  getSupabaseServiceRoleKey() {
+    return this.SUPABASE_SERVICE_ROLE_KEY;
   }
 
   getPort() {

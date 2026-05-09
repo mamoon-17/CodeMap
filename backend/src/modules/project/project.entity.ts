@@ -29,6 +29,9 @@ export class Project {
   @Column({ type: "int", default: 0 })
   fileCount: number;
 
+  @Column({ type: "varchar", nullable: true })
+  zipStoragePath: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }
