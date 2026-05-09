@@ -57,6 +57,11 @@ class RagService:
         def augment_search_query(q: str) -> str:
             t = (q or "").strip()
             low = t.lower()
+            if "agentic" in low or "rag" in low or "tool" in low:
+                return (
+                    f"{t}\n"
+                    "keywords: agentic_query rag_service.py RagService generate_with_tools generate_with_tool_result retrieve_code_chunks"
+                )
             if "server" in low and ("start" in low or "started" in low or "listen" in low):
                 return (
                     f"{t}\n"
@@ -65,6 +70,24 @@ class RagService:
             if "routes" in low or "router" in low:
                 return f"{t}\nkeywords: app.use router routes.ts controller.ts"
             return t
+
+        def is_low_signal_retrieval(scores: list[float]) -> tuple[bool, float, float]:
+            if not scores:
+                return True, 0.0, 0.0
+            top_score = max(scores)
+            med_score = float(median(scores))
+
+            # Absolute minimum: if it's truly low similarity, don't let the LLM guess.
+            if top_score < 0.25:
+                return True, top_score, med_score
+
+            # Soft low-signal: only if top is low-ish AND distribution is flat.
+            # This avoids penalizing cases where all top-k are similarly relevant.
+            spread = top_score - min(scores)
+            if top_score < 0.33 and spread < 0.03:
+                return True, top_score, med_score
+
+            return False, top_score, med_score
 
         # Step 1: First LLM call with tool definition
         first_response = await self.llm_client.generate_with_tools(
@@ -123,11 +146,10 @@ class RagService:
                     sources=[],
                 )
 
-            # Relevance threshold handling (relative rule)
+            # Relevance threshold handling (avoid low-signal hallucinations)
             scores = [float(c.score) for c in chunks if c and c.score is not None]
-            top_score = max(scores) if scores else 0.0
-            med_score = float(median(scores)) if scores else 0.0
-            if top_score < 0.35 or (med_score > 0 and top_score < 1.2 * med_score):
+            low_signal, top_score, med_score = is_low_signal_retrieval(scores)
+            if low_signal:
                 logger.warning(
                     "Low-signal retrieval (top_score=%.3f median=%.3f); returning scoped no-results",
                     top_score,
@@ -146,6 +168,12 @@ class RagService:
                         "routes.ts router",
                         "app.ts app.use",
                         "controller.ts route handler",
+                    ]
+                elif "agentic" in low or "rag" in low or "tool" in low:
+                    suggestions = [
+                        "rag_service.py agentic_query",
+                        "llm_client.py generate_with_tools",
+                        "retrieve_code_chunks tool",
                     ]
                 else:
                     suggestions = ["<feature keyword> file name", "<identifier> definition", "config env var name"]

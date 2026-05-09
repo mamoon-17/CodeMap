@@ -17,9 +17,7 @@ import {
 } from "lucide-react";
 import { ingestCodebase, queryCodebase } from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
+import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
@@ -573,13 +571,8 @@ const Query = () => {
                     {msg.role === "user" ? "U" : "AI"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground leading-relaxed prose prose-sm max-w-none prose-pre:bg-muted/40 prose-pre:border prose-pre:border-border prose-pre:rounded-md prose-code:font-mono prose-code:text-foreground">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeSanitize]}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                    <div className="text-sm leading-relaxed">
+                      <MarkdownAnswer content={msg.content} />
                     </div>
 
                     {msg.tool_used !== undefined && (
@@ -602,7 +595,7 @@ const Query = () => {
                               setSelectedRef(ref);
                               setShowCodePanel(true);
                             }}
-                            className="flex w-full items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-secondary group"
+                            className="flex w-full items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-secondary group"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <File
@@ -619,7 +612,7 @@ const Query = () => {
                                   {ref.score.toFixed(3)}
                                 </span>
                               )}
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-[11px] text-muted-foreground">
                                 {ref.lines}
                               </span>
                             </div>

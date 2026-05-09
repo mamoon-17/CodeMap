@@ -87,7 +87,8 @@ class QueryService {
   ): Promise<Result<IngestResult, string>> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      // Indexing can take a while; keep consistent with ingestFiles().
+      const timeoutId = setTimeout(() => controller.abort(), 300_000);
       const response = await fetch(`${this.ragServiceUrl}/ingest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -108,7 +109,7 @@ class QueryService {
       return ok(data);
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
-        return err("Python RAG service request timed out after 10 seconds");
+        return err("Python RAG service request timed out after 300 seconds");
       }
       const message = e instanceof Error ? e.message : String(e);
       return err(
