@@ -4,21 +4,6 @@ export interface QueryRequest {
   top_k?: number;
 }
 
-export interface IngestFileInput {
-  file_path: string;
-  content: string;
-}
-
-export interface IngestRequest {
-  project_id: string;
-  files: IngestFileInput[];
-  replace_project?: boolean;
-}
-
-export interface IngestResponse {
-  indexed: number;
-}
-
 export interface ProjectFilesResponse {
   project_id: string;
   files: string[];

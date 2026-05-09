@@ -24,10 +24,10 @@ import {
   PanelRightOpen,
   Loader2,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import {
   getProjectFileContent,
   getProjectFiles,
-  ingestCodebase,
   queryCodebase,
 } from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
@@ -36,6 +36,9 @@ import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
+const FILE_TREE_MIN_WIDTH = 180;
+const FILE_TREE_DEFAULT_WIDTH = 224;
+const FILE_TREE_MAX_WIDTH = 640;
 
 interface Message {
   id: string;
@@ -258,14 +261,11 @@ const Query = () => {
   } | null>(null);
   const [showCodePanel, setShowCodePanel] = useState(false);
   const [showFileTree, setShowFileTree] = useState(true);
-  const [fileTreeWidth, setFileTreeWidth] = useState(224);
+  const [fileTreeWidth, setFileTreeWidth] = useState(FILE_TREE_DEFAULT_WIDTH);
   const [codePanelWidth, setCodePanelWidth] = useState(400);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [projectId, setProjectId] = useState(
-    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
-  );
   const [queryProjectId, setQueryProjectId] = useState(
     localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
   );
@@ -273,16 +273,6 @@ const Query = () => {
     localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "manual-project",
   );
   const [projects, setProjects] = useState<ProjectContextItem[]>([]);
-  const [filePath, setFilePath] = useState("src/manual_test.py");
-  const [fileContent, setFileContent] = useState(
-    [
-      "def manual_test_helper():",
-      '    """Manual ingest test helper."""',
-      '    return "manual-ingest-marker"',
-    ].join("\n"),
-  );
-  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
-  const [isIngesting, setIsIngesting] = useState(false);
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
   const [isFileTreeLoading, setIsFileTreeLoading] = useState(false);
   const [fileTreeError, setFileTreeError] = useState<string | null>(null);
@@ -320,7 +310,6 @@ const Query = () => {
     const matched = projects.find((project) => project.id === nextProjectId);
     const nextProjectName = matched?.name || nextProjectId;
 
-    setProjectId(nextProjectId);
     setQueryProjectId(nextProjectId);
     setActiveProjectName(nextProjectName);
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, nextProjectId);
@@ -435,7 +424,10 @@ const Query = () => {
   const handleMouseMoveLeft = useCallback(
     (e: MouseEvent) => {
       if (isResizingLeft) {
-        const newWidth = Math.max(180, Math.min(500, e.clientX));
+        const newWidth = Math.max(
+          FILE_TREE_MIN_WIDTH,
+          Math.min(FILE_TREE_MAX_WIDTH, e.clientX),
+        );
         setFileTreeWidth(newWidth);
       }
     },
@@ -462,9 +454,13 @@ const Query = () => {
 
   useEffect(() => {
     if (isResizingLeft) {
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
       document.addEventListener("mousemove", handleMouseMoveLeft);
       document.addEventListener("mouseup", handleMouseUp);
       return () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
         document.removeEventListener("mousemove", handleMouseMoveLeft);
         document.removeEventListener("mouseup", handleMouseUp);
       };
@@ -539,38 +535,6 @@ const Query = () => {
     }
   };
 
-  const handleIngest = async () => {
-    if (!fileContent.trim() || !filePath.trim() || isIngesting) return;
-
-    setIngestStatus(null);
-    setIsIngesting(true);
-
-    try {
-      const response = await ingestCodebase({
-        project_id: projectId.trim() || "manual-project",
-        replace_project: true,
-        files: [
-          {
-            file_path: filePath.trim(),
-            content: fileContent,
-          },
-        ],
-      });
-
-      setIngestStatus(
-        `Ingested successfully. Indexed chunks: ${response.indexed}`,
-      );
-      updateActiveProject(projectId.trim() || "manual-project");
-      void loadProjectFiles(projectId.trim() || "manual-project");
-    } catch (error) {
-      setIngestStatus(
-        `Ingest failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsIngesting(false);
-    }
-  };
-
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Navbar */}
@@ -596,6 +560,12 @@ const Query = () => {
               {activeProjectName}
             </span>
           </div>
+          <Link
+            to="/dashboard"
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            &larr; Dashboard
+          </Link>
         </div>
       </nav>
 
@@ -604,10 +574,10 @@ const Query = () => {
         {/* Left: File Tree */}
         {showFileTree && (
           <aside
-            className="shrink-0 border-r bg-card overflow-y-auto relative"
+            className="relative flex shrink-0 flex-col border-r bg-card"
             style={{ width: `${fileTreeWidth}px` }}
           >
-            <div className="p-3 border-b">
+            <div className="shrink-0 border-b p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Files
@@ -654,7 +624,7 @@ const Query = () => {
                 </div>
               )}
             </div>
-            <div className="py-1">
+            <div className="flex-1 overflow-y-auto py-1">
               {openFileError && (
                 <div className="px-3 py-2 text-xs text-destructive">
                   {openFileError}
@@ -692,11 +662,18 @@ const Query = () => {
                 ))
               )}
             </div>
-            {/* Resize handle */}
-            <div
-              className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors"
-              onMouseDown={() => setIsResizingLeft(true)}
-            />
+            <button
+              type="button"
+              aria-label="Resize file tree sidebar"
+              className="group absolute -right-1 top-0 z-20 flex h-full w-2 cursor-col-resize items-center justify-center"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setIsResizingLeft(true);
+              }}
+              onDoubleClick={() => setFileTreeWidth(FILE_TREE_DEFAULT_WIDTH)}
+            >
+              <span className="h-full w-px bg-border transition-colors group-hover:bg-primary/60" />
+            </button>
           </aside>
         )}
 
@@ -704,69 +681,6 @@ const Query = () => {
         <main className="flex flex-1 flex-col overflow-hidden">
           {/* Search / Input */}
           <div className="border-b p-4">
-            <div className="mb-4 rounded-md border bg-card p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Manual Ingest (RAG)
-                </span>
-                <button
-                  onClick={handleIngest}
-                  disabled={
-                    isIngesting || !filePath.trim() || !fileContent.trim()
-                  }
-                  className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isIngesting ? "Ingesting..." : "Ingest File"}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
-                    placeholder="Project ID"
-                    className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  {projects.length > 0 && (
-                    <select
-                      value={projectId}
-                      onChange={(e) => updateActiveProject(e.target.value)}
-                      className="rounded border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={filePath}
-                  onChange={(e) => setFilePath(e.target.value)}
-                  placeholder="File path (e.g. src/foo.py)"
-                  className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-
-              <textarea
-                value={fileContent}
-                onChange={(e) => setFileContent(e.target.value)}
-                rows={6}
-                placeholder="Paste full file content here"
-                className="mt-2 w-full rounded border bg-background px-2 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-
-              {ingestStatus && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {ingestStatus}
-                </p>
-              )}
-            </div>
-
             <div className="flex items-center gap-2">
               {!showFileTree && (
                 <button
@@ -777,28 +691,6 @@ const Query = () => {
                   <PanelLeftOpen size={16} />
                 </button>
               )}
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={queryProjectId}
-                  onChange={(e) => setQueryProjectId(e.target.value)}
-                  placeholder="Query Project ID"
-                  className="w-44 rounded-md border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-                {projects.length > 0 && (
-                  <select
-                    value={queryProjectId}
-                    onChange={(e) => updateActiveProject(e.target.value)}
-                    className="rounded-md border bg-card px-2 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
               <div className="relative flex-1">
                 <Search
                   size={16}
@@ -811,8 +703,8 @@ const Query = () => {
                   onKeyDown={(e) => e.key === "Enter" && handleSend()}
                   placeholder={
                     queryProjectId.trim()
-                      ? `Ask about project ${queryProjectId.trim()}...`
-                      : "Set Query Project ID, then ask about your codebase..."
+                      ? `Ask about ${activeProjectName}...`
+                      : "Select a repository from the dashboard, then ask about your codebase..."
                   }
                   disabled={isLoading}
                   className="w-full rounded-md border bg-card py-2.5 pl-10 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
