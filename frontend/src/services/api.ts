@@ -1,6 +1,6 @@
 import type {
-  IngestRequest,
-  IngestResponse,
+  ProjectFileContentResponse,
+  ProjectFilesResponse,
   QueryRequest,
   QueryResponse,
   ReindexStartRequest,
@@ -34,30 +34,41 @@ export async function queryCodebase(
   return response.json();
 }
 
-export async function ingestCodebase(
-  request: IngestRequest,
-): Promise<IngestResponse> {
-  const response = await fetch(`${API_BASE_URL}/query/ingest`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-  });
+export async function getProjectFiles(
+  projectId: string,
+): Promise<ProjectFilesResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/files`,
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
 
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    const baseMessage =
-      error.detail ||
-      error.error ||
-      `HTTP ${response.status}: ${response.statusText}`;
-    const details = error.details ? ` — ${error.details}` : "";
-    throw new Error(`${baseMessage}${details}`);
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
   }
 
-  return response.json();
+  return payload as ProjectFilesResponse;
+}
+
+export async function getProjectFileContent(
+  projectId: string,
+  filePath: string,
+): Promise<ProjectFileContentResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(filePath)}`,
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as ProjectFileContentResponse;
 }
 
 export async function startReindex(

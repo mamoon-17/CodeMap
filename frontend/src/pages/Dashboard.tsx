@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Plus,
   Clock,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
 import { getReindexStatus, startReindex, retryProjectIndex } from "@/services/api";
+import { LogoHomeLink } from "@/components/LogoHomeLink";
 
 interface Repo {
   id: string;
@@ -65,12 +66,23 @@ interface GithubRepoResponse {
   needs_reindex: boolean;
 }
 
+interface UploadedProjectResponse {
+  id: string;
+  name: string;
+  status: string;
+  fileCount: number;
+  createdAt: string;
+}
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
+const MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024;
+const ZIP_TOO_LARGE_MESSAGE =
+  "ZIP file is too large. Please upload a repository archive under 50 MB and remove folders like node_modules, .git, dist, build, or .venv.";
 
 function mapStatus(
   backendStatus: string,
@@ -189,21 +201,55 @@ const Dashboard = () => {
       }
 
       const githubRepos = (payload.data?.repositories || []) as GithubRepoResponse[];
+      const projectsResponse = await fetch(`${API_BASE_URL}/projects`);
+      const projectsPayload = await projectsResponse.json();
+      if (!projectsResponse.ok) {
+        throw new Error(projectsPayload.error || "Failed to load uploaded repositories");
+      }
+      const uploadedProjects = (projectsPayload || []) as UploadedProjectResponse[];
+      const rawProjectContexts = localStorage.getItem(PROJECT_CONTEXTS_KEY);
+      const uploadProjectIds = new Set(
+        rawProjectContexts
+          ? (JSON.parse(rawProjectContexts) as ProjectContextItem[])
+              .filter((project) => project.source === "upload")
+              .map((project) => project.id)
+          : [],
+      );
+      if (activeProjectId && !activeProjectId.startsWith("gh_")) {
+        uploadProjectIds.add(activeProjectId);
+      }
+      const visibleUploadedProjects = uploadedProjects.filter((project) =>
+        uploadProjectIds.has(project.id),
+      );
 
       setRepos(
-        githubRepos.map((repo) => ({
-          id: `gh_${String(repo.id)}`,
-          name: repo.full_name,
-          status: "available",
-          lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
-          lastIndexedAt: repo.last_indexed_at,
-          hasChanges: repo.has_changes,
-          needsReindex: repo.needs_reindex,
-          files: 0,
-          language: repo.language || "Unknown",
-          size: repo.size,
-          source: "github",
-        })),
+        [
+          ...githubRepos.map((repo) => ({
+            id: `gh_${String(repo.id)}`,
+            name: repo.full_name,
+            status: "available" as const,
+            lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
+            lastIndexedAt: repo.last_indexed_at,
+            hasChanges: repo.has_changes,
+            needsReindex: repo.needs_reindex,
+            files: 0,
+            language: repo.language || "Unknown",
+            size: repo.size,
+            source: "github" as const,
+          })),
+          ...visibleUploadedProjects.map((project) => ({
+            id: project.id,
+            name: project.name,
+            status: mapStatus(project.status),
+            lastUpdated: timeAgo(project.createdAt),
+            lastIndexedAt:
+              project.status === "ready" ? project.createdAt : null,
+            hasChanges: false,
+            needsReindex: false,
+            files: project.fileCount ?? 0,
+            source: "upload" as const,
+          })),
+        ],
       );
     } catch (error) {
       setReposError(
@@ -304,6 +350,12 @@ const Dashboard = () => {
 
   const handleAddRepo = async () => {
     if (zipFile) {
+      if (zipFile.size > MAX_ZIP_UPLOAD_BYTES) {
+        setUploadStatus("error");
+        setUploadError(ZIP_TOO_LARGE_MESSAGE);
+        return;
+      }
+
       // Handle ZIP upload
       setUploadStatus("uploading");
       setUploadError("");
@@ -325,6 +377,7 @@ const Dashboard = () => {
           hasChanges: false,
           needsReindex: false,
           files: 0,
+          source: "upload",
         },
       ]);
       setZipFile(null);
@@ -457,16 +510,7 @@ const Dashboard = () => {
       {/* Navbar */}
       <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold text-primary-foreground font-mono">
-                &lt;/&gt;
-              </span>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              CodeMap
-            </span>
-          </Link>
+          <LogoHomeLink />
           <div className="relative">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
@@ -699,12 +743,13 @@ const Dashboard = () => {
                 )}
                 {repo.status === "indexed" && (
                   <div className="mt-4">
-                    <Link
-                      to="/query"
+                    <button
+                      type="button"
+                      onClick={() => handleConnectRepo(repo.id)}
                       className="inline-flex w-full items-center justify-center rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
                     >
                       Open
-                    </Link>
+                    </button>
                   </div>
                 )}
                 {repo.status === "available" && (
@@ -879,7 +924,14 @@ const Dashboard = () => {
                 accept=".zip"
                 className="hidden"
                 onChange={(e) => {
-                  setZipFile(e.target.files?.[0] ?? null);
+                  const nextFile = e.target.files?.[0] ?? null;
+                  if (nextFile && nextFile.size > MAX_ZIP_UPLOAD_BYTES) {
+                    setZipFile(null);
+                    setUploadError(ZIP_TOO_LARGE_MESSAGE);
+                    e.target.value = "";
+                    return;
+                  }
+                  setZipFile(nextFile);
                   setUploadError("");
                 }}
               />
@@ -895,6 +947,9 @@ const Dashboard = () => {
                 <Upload size={16} />
                 {zipFile ? zipFile.name : "Upload ZIP file"}
               </button>
+              <p className="text-xs text-muted-foreground">
+                Maximum ZIP size: 50 MB.
+              </p>
 
               {uploadError && (
                 <p className="text-xs text-destructive">{uploadError}</p>

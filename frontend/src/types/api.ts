@@ -4,19 +4,20 @@ export interface QueryRequest {
   top_k?: number;
 }
 
-export interface IngestFileInput {
+export interface ProjectFilesResponse {
+  project_id: string;
+  files: string[];
+}
+
+export interface ProjectFileContentResponse {
+  project_id: string;
   file_path: string;
   content: string;
-}
-
-export interface IngestRequest {
-  project_id: string;
-  files: IngestFileInput[];
-  replace_project?: boolean;
-}
-
-export interface IngestResponse {
-  indexed: number;
+  chunks: Array<{
+    start_line: number;
+    end_line: number;
+    text: string;
+  }>;
 }
 
 export interface ReindexStartRequest {

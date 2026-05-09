@@ -50,66 +50,110 @@ async function run() {
 
   const { marker, zipBytes } = createZipBytes();
   const projectName = `upload-flow-${Date.now()}`;
+  let createdProjectId = "";
 
-  console.log("[project-upload] uploading zip to Node backend...");
-  const form = new FormData();
-  form.set("name", projectName);
-  form.set("file", new Blob([zipBytes], { type: "application/zip" }), `${projectName}.zip`);
+  try {
+    console.log("[project-upload] uploading zip to Node backend...");
+    const form = new FormData();
+    form.set("name", projectName);
+    form.set("file", new Blob([zipBytes], { type: "application/zip" }), `${projectName}.zip`);
 
-  const uploadResponse = await fetch(`${BACKEND_URL}/projects/upload`, {
-    method: "POST",
-    body: form,
-  });
+    const uploadResponse = await fetch(`${BACKEND_URL}/projects/upload`, {
+      method: "POST",
+      body: form,
+    });
 
-  if (!uploadResponse.ok) {
-    const text = await uploadResponse.text();
-    throw new Error(`Upload failed (${uploadResponse.status}): ${text}`);
+    if (!uploadResponse.ok) {
+      const text = await uploadResponse.text();
+      throw new Error(`Upload failed (${uploadResponse.status}): ${text}`);
+    }
+
+    const uploadJson = await uploadResponse.json();
+    if (!uploadJson.project || !uploadJson.project.id) {
+      throw new Error(`Missing project in response: ${JSON.stringify(uploadJson)}`);
+    }
+    createdProjectId = uploadJson.project.id;
+    if (typeof uploadJson.fileCount !== "number" || uploadJson.fileCount <= 0) {
+      throw new Error(`Unexpected fileCount: ${JSON.stringify(uploadJson)}`);
+    }
+
+    console.log(`[project-upload] created project ${uploadJson.project.id} with fileCount=${uploadJson.fileCount}`);
+
+    console.log("[project-upload] validating indexed file list...");
+    const filesResponse = await fetch(
+      `${BACKEND_URL}/projects/${encodeURIComponent(uploadJson.project.id)}/files`,
+    );
+    if (!filesResponse.ok) {
+      const text = await filesResponse.text();
+      throw new Error(`Project files failed (${filesResponse.status}): ${text}`);
+    }
+    const filesJson = await filesResponse.json();
+    if (
+      !Array.isArray(filesJson.files) ||
+      !filesJson.files.includes("src/integration_upload_sample.py")
+    ) {
+      throw new Error(`Expected uploaded file in project files. Got: ${JSON.stringify(filesJson)}`);
+    }
+
+    console.log("[project-upload] validating indexed file content...");
+    const fileContentResponse = await fetch(
+      `${BACKEND_URL}/projects/${encodeURIComponent(uploadJson.project.id)}/files/content?path=${encodeURIComponent("src/integration_upload_sample.py")}`,
+    );
+    if (!fileContentResponse.ok) {
+      const text = await fileContentResponse.text();
+      throw new Error(`Project file content failed (${fileContentResponse.status}): ${text}`);
+    }
+    const fileContentJson = await fileContentResponse.json();
+    if (
+      typeof fileContentJson.content !== "string" ||
+      !fileContentJson.content.includes(marker)
+    ) {
+      throw new Error(
+        `Expected uploaded marker in indexed file content. Got: ${JSON.stringify(fileContentJson)}`,
+      );
+    }
+
+    console.log("[project-upload] querying through Node backend /query...");
+    const queryResponse = await fetch(`${BACKEND_URL}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: uploadJson.project.id,
+        query: `Find where ${marker} is returned and explain it.`,
+        top_k: 5,
+      }),
+    });
+
+    if (!queryResponse.ok) {
+      const text = await queryResponse.text();
+      throw new Error(`Query failed (${queryResponse.status}): ${text}`);
+    }
+
+    const queryJson = await queryResponse.json();
+    if (!Array.isArray(queryJson.sources) || queryJson.sources.length === 0) {
+      throw new Error(`Expected non-empty sources. Got: ${JSON.stringify(queryJson.sources)}`);
+    }
+    const hasMarkerInSource = queryJson.sources.some(
+      (source) => typeof source.text === "string" && source.text.includes(marker),
+    );
+    if (!hasMarkerInSource) {
+      throw new Error("Expected uploaded marker to be present in retrieved source chunks.");
+    }
+    const hasNodeModulesSource = queryJson.sources.some(
+      (source) => typeof source.file === "string" && source.file.includes("node_modules/"),
+    );
+    if (hasNodeModulesSource) {
+      throw new Error("Expected node_modules/ files to be ignored during ingestion.");
+    }
+
+    console.log("[project-upload] PASS");
+  } finally {
+    if (createdProjectId) {
+      await fetch(`${BACKEND_URL}/projects/${encodeURIComponent(createdProjectId)}/vectors`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
   }
-
-  const uploadJson = await uploadResponse.json();
-  if (!uploadJson.project || !uploadJson.project.id) {
-    throw new Error(`Missing project in response: ${JSON.stringify(uploadJson)}`);
-  }
-  if (typeof uploadJson.fileCount !== "number" || uploadJson.fileCount <= 0) {
-    throw new Error(`Unexpected fileCount: ${JSON.stringify(uploadJson)}`);
-  }
-
-  console.log(`[project-upload] created project ${uploadJson.project.id} with fileCount=${uploadJson.fileCount}`);
-
-  console.log("[project-upload] querying through Node backend /query...");
-  const queryResponse = await fetch(`${BACKEND_URL}/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      project_id: uploadJson.project.id,
-      query: `Find where ${marker} is returned and explain it.`,
-      top_k: 5,
-    }),
-  });
-
-  if (!queryResponse.ok) {
-    const text = await queryResponse.text();
-    throw new Error(`Query failed (${queryResponse.status}): ${text}`);
-  }
-
-  const queryJson = await queryResponse.json();
-  if (!Array.isArray(queryJson.sources) || queryJson.sources.length === 0) {
-    throw new Error(`Expected non-empty sources. Got: ${JSON.stringify(queryJson.sources)}`);
-  }
-  const hasMarkerInSource = queryJson.sources.some(
-    (source) => typeof source.text === "string" && source.text.includes(marker),
-  );
-  if (!hasMarkerInSource) {
-    throw new Error("Expected uploaded marker to be present in retrieved source chunks.");
-  }
-  const hasNodeModulesSource = queryJson.sources.some(
-    (source) => typeof source.file === "string" && source.file.includes("node_modules/"),
-  );
-  if (hasNodeModulesSource) {
-    throw new Error("Expected node_modules/ files to be ignored during ingestion.");
-  }
-
-  console.log("[project-upload] PASS");
 }
 
 run().catch((error) => {
