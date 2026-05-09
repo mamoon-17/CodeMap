@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -97,7 +106,56 @@ const getAncestorFolderPaths = (filePath: string) => {
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
 };
 
-const FileTreeItem = ({
+const filterTree = (nodes: TreeNode[], query: string): TreeNode[] => {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return nodes;
+
+  const folderMatches = nodes
+    .map((node) => {
+      if (node.type !== "folder") return null;
+      if (node.name.toLowerCase().includes(normalizedQuery)) return node;
+
+      const children = filterTree(node.children, normalizedQuery);
+      if (children.length === 0) return null;
+      return { ...node, children };
+    })
+    .filter((node): node is TreeNode => node !== null);
+
+  if (folderMatches.length > 0) return folderMatches;
+
+  return nodes
+    .map((node) => {
+      const children = filterTree(node.children, normalizedQuery);
+      const matches =
+        node.type === "file" &&
+        node.name.toLowerCase().includes(normalizedQuery) ||
+        (node.type === "file" &&
+          node.path.toLowerCase().includes(normalizedQuery));
+
+      if (!matches && children.length === 0) return null;
+      return {
+        ...node,
+        children,
+      };
+    })
+    .filter((node): node is TreeNode => node !== null);
+};
+
+const countFiles = (nodes: TreeNode[]): number =>
+  nodes.reduce(
+    (total, node) =>
+      total + (node.type === "file" ? 1 : countFiles(node.children)),
+    0,
+  );
+
+const collectFolderPaths = (nodes: TreeNode[]): string[] =>
+  nodes.flatMap((node) =>
+    node.type === "folder"
+      ? [node.path, ...collectFolderPaths(node.children)]
+      : [],
+  );
+
+const FileTreeItem = memo(({
   node,
   depth = 0,
   onSelect,
@@ -105,6 +163,7 @@ const FileTreeItem = ({
   expandedFolders,
   selectedFilePath,
   isOpening,
+  selectedItemRef,
 }: {
   node: TreeNode;
   depth?: number;
@@ -113,12 +172,14 @@ const FileTreeItem = ({
   expandedFolders: Set<string>;
   selectedFilePath: string | null;
   isOpening: boolean;
+  selectedItemRef: RefObject<HTMLButtonElement | null>;
 }) => {
   if (node.type === "file") {
     const selected = selectedFilePath === node.path;
 
     return (
       <button
+        ref={selected ? selectedItemRef : undefined}
         onClick={() => onSelect(node.path)}
         disabled={isOpening}
         className={`flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-wait ${
@@ -177,11 +238,14 @@ const FileTreeItem = ({
             expandedFolders={expandedFolders}
             selectedFilePath={selectedFilePath}
             isOpening={isOpening}
+            selectedItemRef={selectedItemRef}
           />
         ))}
     </div>
   );
-};
+});
+
+FileTreeItem.displayName = "FileTreeItem";
 
 const Query = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -226,6 +290,19 @@ const Query = () => {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [openFileError, setOpenFileError] = useState<string | null>(null);
+  const [fileFilter, setFileFilter] = useState("");
+  const deferredFileFilter = useDeferredValue(fileFilter);
+  const selectedTreeItemRef = useRef<HTMLButtonElement | null>(null);
+
+  const filteredFileTree = useMemo(
+    () => filterTree(fileTree, deferredFileFilter),
+    [fileTree, deferredFileFilter],
+  );
+  const visibleFileCount = useMemo(
+    () => countFiles(filteredFileTree),
+    [filteredFileTree],
+  );
+  const isFilteringFiles = deferredFileFilter.trim().length > 0;
 
   useEffect(() => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
@@ -282,7 +359,40 @@ const Query = () => {
     void loadProjectFiles(queryProjectId);
   }, [queryProjectId, loadProjectFiles]);
 
-  const toggleFolder = (path: string) => {
+  const syncTreeToActiveFile = useCallback((path: string) => {
+    setSelectedFilePath(path);
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      getAncestorFolderPaths(path).forEach((folderPath) => next.add(folderPath));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRef?.file) return;
+    syncTreeToActiveFile(selectedRef.file);
+  }, [selectedRef?.file, syncTreeToActiveFile]);
+
+  useEffect(() => {
+    if (!isFilteringFiles) return;
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      collectFolderPaths(filteredFileTree).forEach((folderPath) =>
+        next.add(folderPath),
+      );
+      return next;
+    });
+  }, [deferredFileFilter, filteredFileTree, isFilteringFiles]);
+
+  useEffect(() => {
+    if (!selectedFilePath || !showFileTree) return;
+    selectedTreeItemRef.current?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [selectedFilePath, showFileTree, expandedFolders, filteredFileTree]);
+
+  const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
       const next = new Set(prev);
       if (next.has(path)) {
@@ -292,18 +402,13 @@ const Query = () => {
       }
       return next;
     });
-  };
+  }, []);
 
-  const openFileFromTree = async (path: string) => {
+  const openFileFromTree = useCallback(async (path: string) => {
     const trimmedProjectId = queryProjectId.trim();
     if (!trimmedProjectId || isOpeningFile) return;
 
-    setSelectedFilePath(path);
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      getAncestorFolderPaths(path).forEach((folderPath) => next.add(folderPath));
-      return next;
-    });
+    syncTreeToActiveFile(path);
     setOpenFileError(null);
     setIsOpeningFile(true);
 
@@ -325,7 +430,7 @@ const Query = () => {
     } finally {
       setIsOpeningFile(false);
     }
-  };
+  }, [isOpeningFile, queryProjectId, syncTreeToActiveFile]);
 
   const handleMouseMoveLeft = useCallback(
     (e: MouseEvent) => {
@@ -420,14 +525,6 @@ const Query = () => {
       // Auto-select first reference if available
       if (references && references.length > 0) {
         setSelectedRef(references[0]);
-        setSelectedFilePath(references[0].file);
-        setExpandedFolders((prev) => {
-          const next = new Set(prev);
-          getAncestorFolderPaths(references[0].file).forEach((folderPath) =>
-            next.add(folderPath),
-          );
-          return next;
-        });
         setShowCodePanel(true);
       }
     } catch (error) {
@@ -543,10 +640,19 @@ const Query = () => {
                 />
                 <input
                   type="text"
+                  value={fileFilter}
+                  onChange={(e) => setFileFilter(e.target.value)}
                   placeholder="Filter files…"
                   className="w-full rounded border bg-background py-1 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
+              {!isFileTreeLoading && fileTree.length > 0 && (
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  {isFilteringFiles
+                    ? `${visibleFileCount} matching indexed files`
+                    : `${visibleFileCount} indexed files`}
+                </div>
+              )}
             </div>
             <div className="py-1">
               {openFileError && (
@@ -567,8 +673,12 @@ const Query = () => {
                 <div className="px-3 py-2 text-xs text-muted-foreground">
                   No indexed files found for this project.
                 </div>
+              ) : filteredFileTree.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  No files match this filter.
+                </div>
               ) : (
-                fileTree.map((node) => (
+                filteredFileTree.map((node) => (
                   <FileTreeItem
                     key={node.path}
                     node={node}
@@ -577,6 +687,7 @@ const Query = () => {
                     expandedFolders={expandedFolders}
                     selectedFilePath={selectedFilePath}
                     isOpening={isOpeningFile}
+                    selectedItemRef={selectedTreeItemRef}
                   />
                 ))
               )}
@@ -769,14 +880,6 @@ const Query = () => {
                             key={ref.file + ref.lines}
                             onClick={() => {
                               setSelectedRef(ref);
-                              setSelectedFilePath(ref.file);
-                              setExpandedFolders((prev) => {
-                                const next = new Set(prev);
-                                getAncestorFolderPaths(ref.file).forEach((folderPath) =>
-                                  next.add(folderPath),
-                                );
-                                return next;
-                              });
                               setShowCodePanel(true);
                             }}
                             className="flex w-full items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-secondary group"
