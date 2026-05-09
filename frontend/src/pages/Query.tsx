@@ -23,6 +23,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Loader2,
+  X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -158,6 +159,34 @@ const collectFolderPaths = (nodes: TreeNode[]): string[] =>
       : [],
   );
 
+const HighlightedTreeLabel = ({
+  label,
+  query,
+}: {
+  label: string;
+  query: string;
+}) => {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return <>{label}</>;
+
+  const matchIndex = label.toLowerCase().indexOf(normalizedQuery);
+  if (matchIndex === -1) return <>{label}</>;
+
+  const before = label.slice(0, matchIndex);
+  const match = label.slice(matchIndex, matchIndex + normalizedQuery.length);
+  const after = label.slice(matchIndex + normalizedQuery.length);
+
+  return (
+    <>
+      {before}
+      <mark className="rounded-sm bg-primary/15 px-0.5 text-foreground">
+        {match}
+      </mark>
+      {after}
+    </>
+  );
+};
+
 const FileTreeItem = memo(({
   node,
   depth = 0,
@@ -167,6 +196,7 @@ const FileTreeItem = memo(({
   selectedFilePath,
   isOpening,
   selectedItemRef,
+  searchQuery,
 }: {
   node: TreeNode;
   depth?: number;
@@ -176,9 +206,13 @@ const FileTreeItem = memo(({
   selectedFilePath: string | null;
   isOpening: boolean;
   selectedItemRef: RefObject<HTMLButtonElement | null>;
+  searchQuery: string;
 }) => {
   if (node.type === "file") {
     const selected = selectedFilePath === node.path;
+    const matchesSearch =
+      searchQuery.trim().length > 0 &&
+      node.path.toLowerCase().includes(searchQuery.trim().toLowerCase());
 
     return (
       <button
@@ -188,6 +222,8 @@ const FileTreeItem = memo(({
         className={`flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-wait ${
           selected
             ? "bg-secondary text-foreground"
+            : matchesSearch
+              ? "bg-primary/5 text-foreground"
             : "text-muted-foreground"
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -196,7 +232,9 @@ const FileTreeItem = memo(({
           size={13}
           className={`shrink-0 ${selected ? "text-primary" : "text-muted-foreground/60"}`}
         />
-        <span className="truncate font-mono">{node.name}</span>
+        <span className="truncate font-mono">
+          <HighlightedTreeLabel label={node.name} query={searchQuery} />
+        </span>
         {selected && isOpening && (
           <Loader2 size={12} className="ml-auto shrink-0 animate-spin" />
         )}
@@ -228,7 +266,9 @@ const FileTreeItem = memo(({
             <Folder size={13} className="shrink-0 text-primary/70" />
           </>
         )}
-        <span className="truncate">{node.name}</span>
+        <span className="truncate">
+          <HighlightedTreeLabel label={node.name} query={searchQuery} />
+        </span>
       </button>
       {open &&
         node.children?.map((child) => (
@@ -242,6 +282,7 @@ const FileTreeItem = memo(({
             selectedFilePath={selectedFilePath}
             isOpening={isOpening}
             selectedItemRef={selectedItemRef}
+            searchQuery={searchQuery}
           />
         ))}
     </div>
@@ -613,8 +654,18 @@ const Query = () => {
                   value={fileFilter}
                   onChange={(e) => setFileFilter(e.target.value)}
                   placeholder="Filter files…"
-                  className="w-full rounded border bg-background py-1 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full rounded border bg-background py-1 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
+                {fileFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setFileFilter("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    title="Clear file filter"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
               {!isFileTreeLoading && fileTree.length > 0 && (
                 <div className="mt-2 text-[11px] text-muted-foreground">
@@ -658,6 +709,7 @@ const Query = () => {
                     selectedFilePath={selectedFilePath}
                     isOpening={isOpeningFile}
                     selectedItemRef={selectedTreeItemRef}
+                    searchQuery={deferredFileFilter}
                   />
                 ))
               )}
