@@ -80,9 +80,6 @@ const API_BASE_URL =
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
-const MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024;
-const ZIP_TOO_LARGE_MESSAGE =
-  "ZIP file is too large. Please upload a repository archive under 50 MB and remove folders like node_modules, .git, dist, build, or .venv.";
 
 function mapStatus(
   backendStatus: string,
@@ -350,12 +347,6 @@ const Dashboard = () => {
 
   const handleAddRepo = async () => {
     if (zipFile) {
-      if (zipFile.size > MAX_ZIP_UPLOAD_BYTES) {
-        setUploadStatus("error");
-        setUploadError(ZIP_TOO_LARGE_MESSAGE);
-        return;
-      }
-
       // Handle ZIP upload
       setUploadStatus("uploading");
       setUploadError("");
@@ -925,12 +916,6 @@ const Dashboard = () => {
                 className="hidden"
                 onChange={(e) => {
                   const nextFile = e.target.files?.[0] ?? null;
-                  if (nextFile && nextFile.size > MAX_ZIP_UPLOAD_BYTES) {
-                    setZipFile(null);
-                    setUploadError(ZIP_TOO_LARGE_MESSAGE);
-                    e.target.value = "";
-                    return;
-                  }
                   setZipFile(nextFile);
                   setUploadError("");
                 }}
@@ -948,7 +933,7 @@ const Dashboard = () => {
                 {zipFile ? zipFile.name : "Upload ZIP file"}
               </button>
               <p className="text-xs text-muted-foreground">
-                Maximum ZIP size: 50 MB.
+                Up to 50 MB source files.
               </p>
 
               {uploadError && (
