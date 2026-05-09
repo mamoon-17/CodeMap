@@ -19,6 +19,11 @@ export interface IngestResponse {
   indexed: number;
 }
 
+export interface ProjectFilesResponse {
+  project_id: string;
+  files: string[];
+}
+
 export interface ReindexStartRequest {
   repo_id?: string;
   project_id?: string;

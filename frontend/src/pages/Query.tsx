@@ -15,7 +15,7 @@ import {
   PanelRightOpen,
   Loader2,
 } from "lucide-react";
-import { ingestCodebase, queryCodebase } from "@/services/api";
+import { getProjectFiles, ingestCodebase, queryCodebase } from "@/services/api";
 import type { ProjectContextItem, Source } from "@/types/api";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 
@@ -38,39 +38,54 @@ interface Message {
 
 interface TreeNode {
   name: string;
+  path: string;
   type: "file" | "folder";
-  children?: TreeNode[];
+  children: TreeNode[];
 }
 
-const fileTree: TreeNode[] = [
-  {
-    name: "src",
-    type: "folder",
-    children: [
-      {
-        name: "modules",
-        type: "folder",
-        children: [
-          { name: "query.service.ts", type: "file" },
-          { name: "query.controller.ts", type: "file" },
-          { name: "query.routes.ts", type: "file" },
-        ],
-      },
-      {
-        name: "config",
-        type: "folder",
-        children: [
-          { name: "config.ts", type: "file" },
-          { name: "datasource.ts", type: "file" },
-        ],
-      },
-      { name: "app.ts", type: "file" },
-      { name: "server.ts", type: "file" },
-    ],
-  },
-  { name: "package.json", type: "file" },
-  { name: "tsconfig.json", type: "file" },
-];
+const sortTreeNodes = (nodes: TreeNode[]) =>
+  nodes.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+const buildFileTree = (filePaths: string[]): TreeNode[] => {
+  const root: TreeNode[] = [];
+
+  for (const filePath of filePaths) {
+    const parts = filePath.split(/[\\/]+/).filter(Boolean);
+    let currentLevel = root;
+    let currentPath = "";
+
+    parts.forEach((part, index) => {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isFile = index === parts.length - 1;
+      let node = currentLevel.find(
+        (item) => item.name === part && item.type === (isFile ? "file" : "folder"),
+      );
+
+      if (!node) {
+        node = {
+          name: part,
+          path: currentPath,
+          type: isFile ? "file" : "folder",
+          children: [],
+        };
+        currentLevel.push(node);
+      }
+
+      currentLevel = node.children;
+    });
+  }
+
+  const sortRecursively = (nodes: TreeNode[]) => {
+    sortTreeNodes(nodes);
+    nodes.forEach((node) => sortRecursively(node.children));
+  };
+
+  sortRecursively(root);
+  return root;
+};
 
 const FileTreeItem = ({
   node,
@@ -86,7 +101,7 @@ const FileTreeItem = ({
   if (node.type === "file") {
     return (
       <button
-        onClick={() => onSelect(node.name)}
+        onClick={() => onSelect(node.path)}
         className="flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
@@ -122,7 +137,7 @@ const FileTreeItem = ({
       {open &&
         node.children?.map((child) => (
           <FileTreeItem
-            key={child.name}
+            key={child.path}
             node={child}
             depth={depth + 1}
             onSelect={onSelect}
@@ -168,6 +183,9 @@ const Query = () => {
   );
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
+  const [fileTree, setFileTree] = useState<TreeNode[]>([]);
+  const [isFileTreeLoading, setIsFileTreeLoading] = useState(false);
+  const [fileTreeError, setFileTreeError] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
@@ -191,6 +209,33 @@ const Query = () => {
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, nextProjectId);
     localStorage.setItem(ACTIVE_PROJECT_NAME_KEY, nextProjectName);
   };
+
+  const loadProjectFiles = useCallback(async (nextProjectId: string) => {
+    const trimmedProjectId = nextProjectId.trim();
+    if (!trimmedProjectId) {
+      setFileTree([]);
+      return;
+    }
+
+    setIsFileTreeLoading(true);
+    setFileTreeError(null);
+
+    try {
+      const response = await getProjectFiles(trimmedProjectId);
+      setFileTree(buildFileTree(response.files));
+    } catch (error) {
+      setFileTree([]);
+      setFileTreeError(
+        error instanceof Error ? error.message : "Failed to load repository files",
+      );
+    } finally {
+      setIsFileTreeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjectFiles(queryProjectId);
+  }, [queryProjectId, loadProjectFiles]);
 
   const handleMouseMoveLeft = useCallback(
     (e: MouseEvent) => {
@@ -321,6 +366,7 @@ const Query = () => {
         `Ingested successfully. Indexed chunks: ${response.indexed}`,
       );
       updateActiveProject(projectId.trim() || "manual-project");
+      void loadProjectFiles(projectId.trim() || "manual-project");
     } catch (error) {
       setIngestStatus(
         `Ingest failed: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -373,11 +419,15 @@ const Query = () => {
                 </span>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={handleIngest}
+                    onClick={() => loadProjectFiles(queryProjectId)}
+                    disabled={isFileTreeLoading || !queryProjectId.trim()}
                     className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
-                    title="Re-index"
+                    title="Refresh file tree"
                   >
-                    <RefreshCw size={13} />
+                    <RefreshCw
+                      size={13}
+                      className={isFileTreeLoading ? "animate-spin" : undefined}
+                    />
                   </button>
                   <button
                     onClick={() => setShowFileTree(false)}
@@ -401,9 +451,28 @@ const Query = () => {
               </div>
             </div>
             <div className="py-1">
-              {fileTree.map((node) => (
-                <FileTreeItem key={node.name} node={node} onSelect={() => {}} />
-              ))}
+              {isFileTreeLoading ? (
+                <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+                  <Loader2 size={13} className="animate-spin" />
+                  Loading files...
+                </div>
+              ) : fileTreeError ? (
+                <div className="px-3 py-2 text-xs text-destructive">
+                  {fileTreeError}
+                </div>
+              ) : fileTree.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  No indexed files found for this project.
+                </div>
+              ) : (
+                fileTree.map((node) => (
+                  <FileTreeItem
+                    key={node.path}
+                    node={node}
+                    onSelect={() => {}}
+                  />
+                ))
+              )}
             </div>
             {/* Resize handle */}
             <div

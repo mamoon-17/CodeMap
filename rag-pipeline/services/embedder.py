@@ -139,6 +139,35 @@ def project_stats(project_id: str, page_size: int = 2000) -> dict[str, int]:
     return {"files": len(file_paths), "chunks": chunks}
 
 
+def project_file_paths(project_id: str, page_size: int = 2000) -> list[str]:
+    """Return unique indexed file paths for a project from Chroma metadata."""
+    collection = get_or_create_collection(project_id)
+    if hasattr(collection, "count") and int(collection.count()) == 0:
+        return []
+
+    file_paths: set[str] = set()
+    offset = 0
+    while True:
+        result = collection.get(
+            include=["metadatas"],
+            limit=page_size,
+            offset=offset,
+        )
+        metas = result.get("metadatas") or []
+        if not metas:
+            break
+        for metadata in metas:
+            if isinstance(metadata, dict):
+                file_path = metadata.get("file_path")
+                if isinstance(file_path, str) and file_path:
+                    file_paths.add(file_path)
+        if len(metas) < page_size:
+            break
+        offset += page_size
+
+    return sorted(file_paths, key=lambda path: path.lower())
+
+
 def ingest_and_embed(
     files: Iterable[Any],
     project_id: str,

@@ -1,6 +1,7 @@
 import type {
   IngestRequest,
   IngestResponse,
+  ProjectFilesResponse,
   QueryRequest,
   QueryResponse,
   ReindexStartRequest,
@@ -58,6 +59,24 @@ export async function ingestCodebase(
   }
 
   return response.json();
+}
+
+export async function getProjectFiles(
+  projectId: string,
+): Promise<ProjectFilesResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/files`,
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as ProjectFilesResponse;
 }
 
 export async function startReindex(
