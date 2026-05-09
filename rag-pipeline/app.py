@@ -20,7 +20,6 @@ from routers.projects import router as projects_router
 from routers.query import router as query_router
 from services.embedder import warmup_model
 from services.rag_service import get_rag_service
-from services.chunk_store import init_db
 
 # Configure logging
 logging.basicConfig(
@@ -50,7 +49,6 @@ async def lifespan(app: FastAPI):
     
     # Initialize services
     try:
-        init_db()
         get_rag_service()
         logger.info("✅ RAG service initialized")
     except Exception as e:

@@ -32,6 +32,11 @@ function createZipBytes() {
     "src/integration_upload_sample.py",
     Buffer.from(`def marker():\n    return "${marker}"\n`, "utf8"),
   );
+  // Should be ignored entirely (artifact ignore rules)
+  zip.addFile(
+    "node_modules/somepkg/index.js",
+    Buffer.from(`export const ignored = "${marker}";\n`, "utf8"),
+  );
   zip.addFile(
     "README.md",
     Buffer.from(`# Not indexed\n${marker}\n`, "utf8"),
@@ -96,6 +101,12 @@ async function run() {
   );
   if (!hasMarkerInSource) {
     throw new Error("Expected uploaded marker to be present in retrieved source chunks.");
+  }
+  const hasNodeModulesSource = queryJson.sources.some(
+    (source) => typeof source.file === "string" && source.file.includes("node_modules/"),
+  );
+  if (hasNodeModulesSource) {
+    throw new Error("Expected node_modules/ files to be ignored during ingestion.");
   }
 
   console.log("[project-upload] PASS");

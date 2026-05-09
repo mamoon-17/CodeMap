@@ -104,3 +104,27 @@ export async function getReindexStatus(
 
   return payload as ReindexStatusResponse;
 }
+
+export async function retryProjectIndex(projectId: string): Promise<{
+  project: { id: string; name: string; status: string };
+  indexed: number;
+  fileCount: number;
+}> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/retry`, {
+    method: "POST",
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as {
+    project: { id: string; name: string; status: string };
+    indexed: number;
+    fileCount: number;
+  };
+}

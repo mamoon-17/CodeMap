@@ -30,9 +30,11 @@ class ProjectController {
       return;
     }
 
-    res.status(201).json({
+    const statusCode = result.value.project.status === "failed" ? 202 : 201;
+    res.status(statusCode).json({
       project: result.value.project,
       fileCount: result.value.files.length,
+      ...(result.value.indexingError ? { error: result.value.indexingError } : {}),
     });
   }
 
@@ -55,6 +57,23 @@ class ProjectController {
       indexed: result.value.indexed,
       fileCount: result.value.project.fileCount,
     });
+  }
+
+  async deleteVectors(req: Request, res: Response) {
+    const rawId = req.params.id;
+    const projectId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!projectId) {
+      res.status(400).json({ error: "Missing project id" });
+      return;
+    }
+
+    const result = await projectService.deleteVectorsAndMaybeProject(projectId);
+    if (result.isErr()) {
+      res.status(500).json({ error: result.error });
+      return;
+    }
+
+    res.status(200).json({ deleted: result.value.deleted });
   }
 }
 

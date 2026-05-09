@@ -54,7 +54,6 @@ except Exception:
     pass
 
 from services.chunker import smart_chunk_file
-from services.chunk_store import init_db, delete_project, delete_file, upsert_chunks
 
 
 def compute_file_hash(content: str) -> str:
@@ -105,6 +104,41 @@ def _reset_project_collection(project_id: str):
         pass
 
 
+def delete_project_vectors(project_id: str) -> None:
+    """Delete all vectors for a project by dropping its Chroma collection."""
+    _reset_project_collection(project_id)
+
+
+def project_stats(project_id: str, page_size: int = 2000) -> dict[str, int]:
+    """Compute file/chunk counts from Chroma (source of truth)."""
+    collection = get_or_create_collection(project_id)
+    chunks = int(collection.count()) if hasattr(collection, "count") else 0
+    if chunks == 0:
+        return {"files": 0, "chunks": 0}
+
+    file_paths: set[str] = set()
+    offset = 0
+    while True:
+        result = collection.get(
+            include=["metadatas"],
+            limit=page_size,
+            offset=offset,
+        )
+        metas = result.get("metadatas") or []
+        if not metas:
+            break
+        for m in metas:
+            if isinstance(m, dict):
+                fp = m.get("file_path")
+                if isinstance(fp, str) and fp:
+                    file_paths.add(fp)
+        if len(metas) < page_size:
+            break
+        offset += page_size
+
+    return {"files": len(file_paths), "chunks": chunks}
+
+
 def ingest_and_embed(
     files: Iterable[Any],
     project_id: str,
@@ -112,10 +146,8 @@ def ingest_and_embed(
 ) -> dict[str, int]:
     """Chunk files, embed, and persist vectors in ChromaDB."""
     t0 = time.perf_counter()
-    init_db()
     if replace_project:
         _reset_project_collection(project_id)
-        delete_project(project_id)
 
     collection = get_or_create_collection(project_id)
     t_model0 = time.perf_counter()
@@ -180,18 +212,13 @@ def ingest_and_embed(
         chunks = by_path.get(file_path, [])
         if not replace_project:
             collection.delete(where={"file_path": file_path})
-            delete_file(project_id, file_path)
 
         if not chunks:
             continue
 
-        # Store chunk metadata in relational DB (cleanup+validation)
         # Vector ids are deterministic and match Chroma ids below.
         for c in chunks:
             c["vector_id"] = f"{project_id}_{c['file_path']}_{c['start_line']}"
-        tcs0 = time.perf_counter()
-        upsert_chunks(project_id, file_path, chunks)
-        t_chunk_store += time.perf_counter() - tcs0
 
         texts = [c["text"] for c in chunks]
         ids = [c["vector_id"] for c in chunks]
@@ -239,7 +266,7 @@ def ingest_and_embed(
         elapsed,
         t_model,
         t_chunk,
-        t_chunk_store,
+        0.0,
         t_embed,
         t_upsert,
         CHUNK_WORKERS,

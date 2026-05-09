@@ -10,6 +10,7 @@ import {
   uploadObject,
 } from "../../integrations/supabase/supabaseClient";
 import { Project, ProjectStatus } from "./project.entity";
+import { RepositoryRecord } from "./repository.entity";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".js",
@@ -34,6 +35,24 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 const STORAGE_BUCKET = "codemap-projects";
+const MAX_FILES_PER_UPLOAD = 500;
+const MAX_FILE_BYTES = 250_000;
+
+const IGNORED_DIR_SEGMENTS = [
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".git",
+] as const;
 
 function sanitizeForKey(input: string): string {
   const base = path.basename(input);
@@ -47,6 +66,11 @@ function normalizeZipEntryPath(entryName: string): string {
   return normalized.replace(/^(\.\/)+/, "");
 }
 
+function shouldIgnorePath(normalizedPosixPath: string): boolean {
+  const parts = normalizedPosixPath.split("/").filter(Boolean);
+  return parts.some((p) => (IGNORED_DIR_SEGMENTS as readonly string[]).includes(p));
+}
+
 function isUnsafeZipEntryPath(entryName: string): boolean {
   if (!entryName) return true;
   if (entryName.includes("\u0000")) return true;
@@ -57,6 +81,21 @@ function isUnsafeZipEntryPath(entryName: string): boolean {
   // Windows drive-letter absolute paths inside zips (e.g. C:\foo)
   if (/^[a-zA-Z]:\//.test(normalized)) return true;
   return false;
+}
+
+function isProbablyBinary(buf: Buffer): boolean {
+  const sample = buf.subarray(0, Math.min(buf.length, 4096));
+  let suspicious = 0;
+  for (const b of sample) {
+    if (b === 0) return true;
+    const isAllowed =
+      b === 9 || // \t
+      b === 10 || // \n
+      b === 13 || // \r
+      (b >= 32 && b <= 126);
+    if (!isAllowed) suspicious += 1;
+  }
+  return sample.length > 0 && suspicious / sample.length > 0.2;
 }
 
 function isZipFile(zipPath: string): boolean {
@@ -88,10 +127,14 @@ function buildIngestPayloadFromZip(zip: AdmZip): {
     }
 
     const normalized = normalizeZipEntryPath(entryName);
+    if (shouldIgnorePath(normalized)) continue;
     const ext = path.posix.extname(normalized).toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
 
     const data = entry.getData();
+    if (data.length > MAX_FILE_BYTES) continue;
+    if (isProbablyBinary(data)) continue;
+    if (files.length >= MAX_FILES_PER_UPLOAD) break;
     const content = data.toString("utf8");
     files.push({ file_path: normalized, content });
     filePaths.push(normalized);
@@ -116,7 +159,12 @@ class ProjectService {
     name: string,
     zipPath: string,
     originalFilename?: string,
-  ): Promise<Result<{ project: Project; files: string[] }, string>> {
+  ): Promise<
+    Result<
+      { project: Project; files: string[]; indexingError?: string },
+      string
+    >
+  > {
     let repo: any = null;
     let saved: Project | null = null;
     let storagePath: string | null = null;
@@ -167,9 +215,16 @@ class ProjectService {
       const ingestResult = await queryService.ingestFiles({
         project_id: saved.id,
         files,
+        replace_project: true,
       });
       if (ingestResult.isErr()) {
-        throw new Error(ingestResult.error);
+        saved.status = ProjectStatus.FAILED;
+        await repo.save(saved);
+        return ok({
+          project: saved,
+          files: filePaths,
+          indexingError: ingestResult.error,
+        });
       }
 
       saved.status = ProjectStatus.READY;
@@ -280,6 +335,53 @@ class ProjectService {
         // ignore status persistence failure
       }
       return err(`Retry failed: ${message}`);
+    }
+  }
+
+  async deleteVectorsAndMaybeProject(
+    projectId: string,
+  ): Promise<Result<{ deleted: boolean }, string>> {
+    const vectorsResult = await queryService.deleteProjectVectors(projectId);
+    if (vectorsResult.isErr()) return err(vectorsResult.error);
+
+    // GitHub projects are not removed from UI; only vectors are wiped.
+    if (projectId.startsWith("gh_")) {
+      const githubRepoId = projectId.replace(/^gh_/, "");
+      try {
+        const repoRepo = AppDataSource.getRepository(RepositoryRecord);
+        await repoRepo.update(
+          { githubRepoId },
+          { lastIndexedAt: null, needsReindex: true },
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return err(`Deleted vectors, but failed to update repo state: ${message}`);
+      }
+      return ok({ deleted: vectorsResult.value.deleted });
+    }
+
+    // Uploaded projects are removed from the UI: delete the row and best-effort delete any surviving storage object.
+    try {
+      const repo = AppDataSource.getRepository(Project);
+      const project = await repo.findOne({ where: { id: projectId } });
+      if (!project) return ok({ deleted: vectorsResult.value.deleted });
+
+      if (project.zipStoragePath) {
+        try {
+          await deleteObject(STORAGE_BUCKET, project.zipStoragePath);
+        } catch (e) {
+          console.warn(
+            `[projectService] Failed to delete storage object ${project.zipStoragePath}:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+
+      await repo.delete({ id: projectId });
+      return ok({ deleted: vectorsResult.value.deleted });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Deleted vectors, but failed to delete project row: ${message}`);
     }
   }
 }
