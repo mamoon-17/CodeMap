@@ -450,8 +450,38 @@ const Dashboard = () => {
       currentUser.authProvider.slice(1)
     : "Unknown";
 
-  const startGithubConnect = () => {
-    window.location.href = `${API_BASE_URL}/auth/github?mode=connect`;
+  const startGithubConnect = async () => {
+    const headers = authHeaders();
+    if (!headers) {
+      setReposError("Please login to connect GitHub.");
+      return;
+    }
+
+    setReposError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/github/connect`, {
+        headers,
+        credentials: "include",
+      });
+
+      const payload = await response
+        .json()
+        .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+      if (!response.ok || typeof payload.redirectUrl !== "string") {
+        throw new Error(payload.error || "Failed to start GitHub connect");
+      }
+
+      setShowDropdown(false);
+      window.location.href = payload.redirectUrl;
+    } catch (error) {
+      setReposError(
+        error instanceof Error
+          ? error.message
+          : "Failed to start GitHub connect",
+      );
+    }
   };
 
   return (
@@ -484,7 +514,7 @@ const Dashboard = () => {
                   <img
                     src={currentUser.avatarUrl}
                     alt="User avatar"
-                    className="h-7 w-7 rounded-full object-cover"
+                    className="h-7 w-7 rounded-full object-contain bg-white"
                   />
                 ) : (
                   <span className="text-xs font-medium text-primary">

@@ -25,6 +25,19 @@ export class AuthController {
     return `${req.protocol}://${req.get("host")}/auth/${provider}/callback`;
   }
 
+  private buildGithubAuthUrl(
+    clientId: string,
+    callbackUrl: string,
+    state: string,
+  ): string {
+    const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
+    githubAuthUrl.searchParams.set("client_id", clientId);
+    githubAuthUrl.searchParams.set("redirect_uri", callbackUrl);
+    githubAuthUrl.searchParams.set("scope", "repo read:user user:email");
+    githubAuthUrl.searchParams.set("state", state);
+    return githubAuthUrl.toString();
+  }
+
   private getFrontendBaseUrl(): string {
     return config.getFrontendUrl() || "http://localhost:5173";
   }
@@ -123,6 +136,51 @@ export class AuthController {
     googleAuthUrl.searchParams.set("prompt", "select_account");
 
     res.redirect(googleAuthUrl.toString());
+  }
+
+  githubConnectStart(req: Request, res: Response): void {
+    const clientId = config.getGithubClientId();
+
+    if (!clientId) {
+      res.status(500).json({
+        success: false,
+        error: "Missing GITHUB_CLIENT_ID configuration",
+      });
+      return;
+    }
+
+    if (!req.user?.id) {
+      res.status(401).json({
+        success: false,
+        error: "Authentication required to connect GitHub.",
+      });
+      return;
+    }
+
+    const state = crypto.randomUUID();
+    res.cookie("github_oauth_state", state, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+    });
+    res.cookie("github_oauth_intent", "connect", {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+    });
+    res.cookie("github_oauth_user_id", req.user.id, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+    });
+
+    const callbackUrl = this.buildCallbackUrl(req, "github");
+    const redirectUrl = this.buildGithubAuthUrl(clientId, callbackUrl, state);
+
+    res.status(200).json({
+      success: true,
+      redirectUrl,
+    });
   }
 
   async googleAuthCallback(req: Request, res: Response): Promise<void> {
@@ -272,13 +330,9 @@ export class AuthController {
     });
 
     const callbackUrl = this.buildCallbackUrl(req, "github");
-    const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
-    githubAuthUrl.searchParams.set("client_id", clientId);
-    githubAuthUrl.searchParams.set("redirect_uri", callbackUrl);
-    githubAuthUrl.searchParams.set("scope", "repo read:user user:email");
-    githubAuthUrl.searchParams.set("state", state);
+    const redirectUrl = this.buildGithubAuthUrl(clientId, callbackUrl, state);
 
-    res.redirect(githubAuthUrl.toString());
+    res.redirect(redirectUrl);
   }
 
   async githubAuthCallback(req: Request, res: Response): Promise<void> {
@@ -286,8 +340,10 @@ export class AuthController {
     const state = req.query.state;
     const savedState = req.cookies?.github_oauth_state;
     const intent = this.resolveOAuthIntent(req.cookies?.github_oauth_intent);
+    const connectUserId = req.cookies?.github_oauth_user_id;
     res.clearCookie("github_oauth_state");
     res.clearCookie("github_oauth_intent");
+    res.clearCookie("github_oauth_user_id");
 
     if (typeof code !== "string") {
       this.redirectOAuthError(res, "github", "Missing GitHub authorization code");
@@ -407,6 +463,7 @@ export class AuthController {
         avatarUrl: githubUser.avatar_url,
         oauthAccessToken: tokenData.access_token,
         intent,
+        connectUserId: intent === "connect" ? connectUserId : undefined,
       });
 
       oauthResult.match(

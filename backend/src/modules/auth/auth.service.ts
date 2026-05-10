@@ -20,6 +20,7 @@ export class AuthService {
     avatarUrl?: string;
     oauthAccessToken?: string;
     intent?: OAuthIntent;
+    connectUserId?: string;
   }): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
     const intent = params.intent || "login";
@@ -35,6 +36,57 @@ export class AuthService {
       });
 
       if (intent === "connect") {
+        if (params.connectUserId) {
+          const existingById = await repository.findOne({
+            where: { id: params.connectUserId },
+          });
+
+          if (!existingById) {
+            return err(
+              "No existing account found to link. Please login before connecting.",
+            );
+          }
+
+          if (existingByProvider && existingByProvider.id !== existingById.id) {
+            return err(
+              `This ${params.provider.toLowerCase()} account is already linked to another user.`,
+            );
+          }
+
+          if (params.provider === AuthProvider.GOOGLE) {
+            if (
+              existingById.googleId &&
+              existingById.googleId !== params.providerId
+            ) {
+              return err(
+                "This Google account is already linked to another user.",
+              );
+            }
+
+            existingById.googleId = params.providerId;
+          } else {
+            if (
+              existingById.githubId &&
+              existingById.githubId !== params.providerId
+            ) {
+              return err("This GitHub account is already linked to another user.");
+            }
+
+            existingById.githubId = params.providerId;
+            if (params.oauthAccessToken) {
+              existingById.githubAccessToken = params.oauthAccessToken;
+            }
+          }
+
+          if (params.avatarUrl) {
+            existingById.avatarUrl = params.avatarUrl;
+          }
+
+          existingById.lastLogin = new Date();
+          const updatedUser = await repository.save(existingById);
+          return ok(updatedUser);
+        }
+
         const existingByEmail = await repository.findOne({
           where: { email: params.email },
         });

@@ -101,13 +101,14 @@ class UserController {
         return;
       }
 
-      const result = await userService.deleteUser(req.user.id);
+      const result = await userService.deleteUserAccount(req.user.id);
 
       result.match(
-        () => {
+        (payload) => {
           res.status(200).json({
             success: true,
             message: "Account deleted successfully.",
+            ...(payload.warnings.length > 0 ? { warnings: payload.warnings } : {}),
           });
         },
         (error) => {

@@ -103,7 +103,7 @@ const Profile = () => {
                     <img
                       src={profile.avatarUrl}
                       alt="User avatar"
-                      className="h-14 w-14 rounded-full object-cover"
+                      className="h-14 w-14 rounded-full object-contain bg-white"
                     />
                   ) : (
                     <span className="text-lg font-semibold text-primary">

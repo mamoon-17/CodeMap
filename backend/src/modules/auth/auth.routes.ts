@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authController } from "./auth.controller";
 import { validationMiddleware } from "../../middleware/validation.middleware";
+import { authMiddleware } from "../../middleware/auth.middleware";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 
@@ -23,6 +24,11 @@ router.post("/logout", (req, res) => authController.logout(req, res));
 router.get("/google", (req, res) => authController.googleAuthStart(req, res));
 router.get("/google/callback", (req, res) =>
   authController.googleAuthCallback(req, res),
+);
+router.get(
+  "/github/connect",
+  (req, res, next) => authMiddleware.requireAuth(req, res, next),
+  (req, res) => authController.githubConnectStart(req, res),
 );
 router.get("/github", (req, res) => authController.githubAuthStart(req, res));
 router.get("/github/callback", (req, res) =>

@@ -29,7 +29,7 @@ def get_project_stats(project_id: str):
     },
 )
 def delete_vectors(project_id: str):
-    """Delete all vectors for this project (drops the Chroma collection)."""
+    """Delete all vectors and chunk metadata for this project."""
     delete_project_vectors(project_id)
     return {"project_id": project_id, "deleted": True}
 
