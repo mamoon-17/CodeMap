@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
   getProjectFileContent,
   getProjectFiles,
   queryCodebase,
@@ -38,14 +39,41 @@ import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
+const CHAT_HISTORY_KEY_PREFIX = "chatHistory_";
+const MAX_STORED_MESSAGES = 50;
 const FILE_TREE_MIN_WIDTH = 180;
 const FILE_TREE_DEFAULT_WIDTH = 224;
 const FILE_TREE_MAX_WIDTH = 640;
+
+const getChatStorageKey = (projectId: string) =>
+  `${CHAT_HISTORY_KEY_PREFIX}${projectId}`;
+
+const persistMessages = (projectId: string, messages: Message[]) => {
+  if (!projectId) return;
+  try {
+    const toStore = messages.slice(-MAX_STORED_MESSAGES);
+    localStorage.setItem(getChatStorageKey(projectId), JSON.stringify(toStore));
+  } catch {
+    // localStorage may be unavailable (private mode) or full (QuotaExceededError);
+    // fail silently so the chat keeps working even if persistence is degraded.
+  }
+};
+
+function isValidMessage(m: unknown): m is Message {
+  if (!m || typeof m !== "object") return false;
+  const msg = m as Record<string, unknown>;
+  return (
+    typeof msg.id === "string" &&
+    (msg.role === "user" || msg.role === "ai") &&
+    typeof msg.content === "string"
+  );
+}
 
 interface Message {
   id: string;
   role: "user" | "ai";
   content: string;
+  project_id?: string;
   tool_used?: boolean;
   references?: {
     file: string;
@@ -293,7 +321,24 @@ const FileTreeItem = memo(({
 FileTreeItem.displayName = "FileTreeItem";
 
 const Query = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const projectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "";
+    if (!projectId) return [];
+    try {
+      const stored = localStorage.getItem(getChatStorageKey(projectId));
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (m) =>
+              isValidMessage(m) &&
+              (!m.project_id || m.project_id === projectId),
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [selectedRef, setSelectedRef] = useState<{
     file: string;
@@ -309,10 +354,10 @@ const Query = () => {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [queryProjectId, setQueryProjectId] = useState(
-    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
+    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "",
   );
   const [activeProjectName, setActiveProjectName] = useState(
-    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "manual-project",
+    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "",
   );
   const [projects, setProjects] = useState<ProjectContextItem[]>([]);
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
@@ -335,6 +380,28 @@ const Query = () => {
     [filteredFileTree],
   );
   const isFilteringFiles = deferredFileFilter.trim().length > 0;
+
+  useEffect(() => {
+    if (!queryProjectId) {
+      setMessages([]);
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(getChatStorageKey(queryProjectId));
+      if (!stored) {
+        setMessages([]);
+        return;
+      }
+      const parsed = JSON.parse(stored);
+      const valid = Array.isArray(parsed) ? parsed.filter(isValidMessage) : [];
+      const filtered = valid.filter(
+        (m) => !m.project_id || m.project_id === queryProjectId,
+      );
+      setMessages(filtered);
+    } catch {
+      setMessages([]);
+    }
+  }, [queryProjectId]);
 
   useEffect(() => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
@@ -381,6 +448,12 @@ const Query = () => {
       setFileTreeError(
         error instanceof Error ? error.message : "Failed to load repository files",
       );
+      if (error instanceof ApiError && error.status === 404) {
+        setMessages([]);
+        localStorage.removeItem(getChatStorageKey(nextProjectId));
+        localStorage.removeItem(ACTIVE_PROJECT_ID_KEY);
+        localStorage.removeItem(ACTIVE_PROJECT_NAME_KEY);
+      }
     } finally {
       setIsFileTreeLoading(false);
     }
@@ -521,6 +594,15 @@ const Query = () => {
   }, [isResizingRight, handleMouseMoveRight, handleMouseUp]);
 
   const handleSend = async () => {
+    if (!queryProjectId || !queryProjectId.trim()) {
+      const errorMsg: Message = {
+        id: String(Date.now()),
+        role: "ai",
+        content: "Please select a repository from the dashboard before querying.",
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      return;
+    }
     if (!input.trim() || !queryProjectId.trim() || isLoading) return;
 
     updateActiveProject(queryProjectId.trim());
@@ -529,6 +611,7 @@ const Query = () => {
       id: String(Date.now()),
       role: "user",
       content: input,
+      project_id: queryProjectId,
     };
     setMessages((prev) => [...prev, userMsg]);
     const queryText = input;
@@ -554,11 +637,16 @@ const Query = () => {
         id: String(Date.now() + 1),
         role: "ai",
         content: response.answer,
+        project_id: queryProjectId,
         tool_used: response.tool_used,
         references,
       };
 
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => {
+        const updated = [...prev, aiMsg];
+        persistMessages(queryProjectId, updated);
+        return updated;
+      });
 
       // Auto-select first reference if available
       if (references && references.length > 0) {
@@ -570,8 +658,13 @@ const Query = () => {
         id: String(Date.now() + 1),
         role: "ai",
         content: `Error: ${error instanceof Error ? error.message : "Failed to get response from backend"}`,
+        project_id: queryProjectId,
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => {
+        const updated = [...prev, errorMsg];
+        persistMessages(queryProjectId, updated);
+        return updated;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -590,7 +683,7 @@ const Query = () => {
             </span>
             <span className="text-muted-foreground/40">/</span>
             <span className="text-xs text-muted-foreground truncate max-w-[220px]">
-              {activeProjectName}
+              {activeProjectName || "No project selected"}
             </span>
           </div>
           <Link
@@ -733,6 +826,21 @@ const Query = () => {
                   title="Show sidebar"
                 >
                   <PanelLeftOpen size={16} />
+                </button>
+              )}
+              {messages.length > 0 && !isLoading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessages([]);
+                    if (queryProjectId) {
+                      localStorage.removeItem(getChatStorageKey(queryProjectId));
+                    }
+                  }}
+                  className="rounded p-1.5 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+                  title="Clear chat history"
+                >
+                  <X size={16} />
                 </button>
               )}
               <div className="relative flex-1">

@@ -54,6 +54,7 @@ except Exception:
     pass
 
 from services.chunker import smart_chunk_file
+from constants import RETRIEVAL_THRESHOLDS
 
 
 def compute_file_hash(content: str) -> str:
@@ -361,6 +362,7 @@ def retrieve_similar_chunks(
     language: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks from one project or across all project collections."""
+    t0 = time.perf_counter()
     client = _get_chroma_client()
     model = _get_model()
     query_embedding = model.encode(query_text, show_progress_bar=False).tolist()
@@ -413,12 +415,43 @@ def retrieve_similar_chunks(
                 }
             )
 
+    pre_filter_count = len(matches)
     if project_id:
         matches = [
             match
             for match in matches
             if (match.get("metadata") or {}).get("project_id") == project_id
         ]
+    if project_id and len(matches) != pre_filter_count:
+        logger.warning(
+            "cross_project_leakage detected project=%s pre_filter=%d post_filter=%d",
+            project_id,
+            pre_filter_count,
+            len(matches),
+        )
+
+    matches = [m for m in matches if m["score"] >= RETRIEVAL_THRESHOLDS["MIN_RETURN_SCORE"]]
+
+    max_score = max(m["score"] for m in matches) if matches else 1.0
+    if max_score > 0:
+        for m in matches:
+            m["score"] = m["score"] / max_score
 
     matches.sort(key=lambda item: item["score"], reverse=True)
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "retrieve_similar_chunks project=%s query_len=%d results=%d elapsed=%.3fs",
+        project_id,
+        len(query_text),
+        min(len(matches), top_k),
+        elapsed,
+    )
+    if elapsed > 5.0:
+        logger.warning(
+            "slow_retrieval project=%s elapsed=%.3fs — consider reducing top_k or collection size",
+            project_id,
+            elapsed,
+        )
+
     return matches[:top_k]

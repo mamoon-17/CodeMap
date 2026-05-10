@@ -11,9 +11,29 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Query the RAG pipeline for a specific project.
+ * Throws immediately if project_id is missing to prevent
+ * cross-project data leakage at the API layer.
+ *
+ * project_id is an internal identifier — never render it directly in UI.
+ * Use project name from state for all display purposes.
+ */
 export async function queryCodebase(
   request: QueryRequest,
 ): Promise<QueryResponse> {
+  if (!request.project_id || !request.project_id.trim()) {
+    throw new Error("project_id is required to query the codebase");
+  }
   const response = await fetch(`${API_BASE_URL}/query`, {
     method: "POST",
     headers: {
@@ -46,7 +66,10 @@ export async function getProjectFiles(
     .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
 
   if (!response.ok) {
-    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+    throw new ApiError(
+      payload.error || `HTTP ${response.status}: ${response.statusText}`,
+      response.status,
+    );
   }
 
   return payload as ProjectFilesResponse;

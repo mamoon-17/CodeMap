@@ -1,6 +1,7 @@
 # FastAPI and dependencies
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
+anyio>=4.0.0
 # Pydantic v2.9 is too old for Python 3.14 on Windows (no wheels for pydantic-core).
 # Use a newer Pydantic that ships cp314 wheels via pydantic-core.
 pydantic>=2.11.0

@@ -101,6 +101,10 @@ function timeAgo(dateStr: string): string {
   return `${days} day${days > 1 ? "s" : ""} ago`;
 }
 
+const clearProjectChatHistory = (projectId: string) => {
+  localStorage.removeItem(`chatHistory_${projectId}`);
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -149,6 +153,9 @@ const Dashboard = () => {
     projectName: string,
     source: "github" | "upload",
   ) => {
+    if (import.meta.env.DEV && activeProjectId && activeProjectId !== projectId) {
+      console.info("Project switched from", activeProjectId, "to", projectId);
+    }
     setActiveProjectId(projectId);
     setActiveProjectName(projectName);
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
@@ -595,7 +602,7 @@ const Dashboard = () => {
             </p>
             {activeProjectId && (
               <p className="text-xs text-muted-foreground mt-1">
-                Active project: {activeProjectName || activeProjectId}
+                Active project: {activeProjectName || "Unknown project"}
               </p>
             )}
           </div>

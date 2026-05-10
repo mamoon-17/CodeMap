@@ -9,7 +9,7 @@ from statistics import median
 from services.llm.llm_client import get_llm_client
 from services.embedding_service import get_embedding_service
 from models.types_models import AgenticQueryResult, ToolCall
-from constants import ERROR_MESSAGES
+from constants import ERROR_MESSAGES, RETRIEVAL_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,10 @@ class RagService:
             AgenticQueryResult with answer and optional sources
         """
         logger.info(f"Processing agentic query: '{query_text}'")
+
+        if not project_id or not project_id.strip():
+            logger.error("agentic_query called without project_id — rejecting")
+            raise ValueError(ERROR_MESSAGES["MISSING_PROJECT_ID"])
 
         def is_repo_question(q: str) -> bool:
             t = (q or "").strip().lower()
@@ -76,18 +80,25 @@ class RagService:
                 return True, 0.0, 0.0
             top_score = max(scores)
             med_score = float(median(scores))
+            spread = top_score - min(scores)
 
             # Absolute minimum: if it's truly low similarity, don't let the LLM guess.
-            if top_score < 0.25:
-                return True, top_score, med_score
-
             # Soft low-signal: only if top is low-ish AND distribution is flat.
             # This avoids penalizing cases where all top-k are similarly relevant.
-            spread = top_score - min(scores)
-            if top_score < 0.33 and spread < 0.03:
-                return True, top_score, med_score
+            low_signal = (
+                top_score < RETRIEVAL_THRESHOLDS["ABSOLUTE_MIN_SCORE"]
+                or (
+                    top_score < RETRIEVAL_THRESHOLDS["SOFT_MIN_SCORE"]
+                    and spread < RETRIEVAL_THRESHOLDS["SOFT_MAX_SPREAD"]
+                )
+            )
 
-            return False, top_score, med_score
+            logger.info(
+                "retrieval_quality top=%.3f median=%.3f min=%.3f spread=%.3f low_signal=%s",
+                top_score, med_score, min(scores), spread, low_signal
+            )
+
+            return low_signal, top_score, med_score
 
         # Step 1: First LLM call with tool definition
         first_response = await self.llm_client.generate_with_tools(
@@ -146,8 +157,25 @@ class RagService:
                     sources=[],
                 )
 
+            logger.info(
+                "chunk_scores scores=%s",
+                [round(float(c.score), 3) for c in chunks]
+            )
+
             # Relevance threshold handling (avoid low-signal hallucinations)
             scores = [float(c.score) for c in chunks if c and c.score is not None]
+            if scores:
+                logger.info(
+                    "retrieval_metrics query='%s' project=%s chunks=%d "
+                    "top=%.3f median=%.3f mean=%.3f min=%.3f",
+                    query_text,
+                    project_id,
+                    len(chunks),
+                    max(scores),
+                    float(median(scores)),
+                    sum(scores) / len(scores),
+                    min(scores),
+                )
             low_signal, top_score, med_score = is_low_signal_retrieval(scores)
             if low_signal:
                 logger.warning(
