@@ -73,6 +73,7 @@ interface Message {
   id: string;
   role: "user" | "ai";
   content: string;
+  project_id?: string;
   tool_used?: boolean;
   references?: {
     file: string;
@@ -387,7 +388,10 @@ const Query = () => {
       }
       const parsed = JSON.parse(stored);
       const valid = Array.isArray(parsed) ? parsed.filter(isValidMessage) : [];
-      setMessages(valid);
+      const filtered = valid.filter(
+        (m) => !m.project_id || m.project_id === queryProjectId,
+      );
+      setMessages(filtered);
     } catch {
       setMessages([]);
     }
@@ -601,6 +605,7 @@ const Query = () => {
       id: String(Date.now()),
       role: "user",
       content: input,
+      project_id: queryProjectId,
     };
     setMessages((prev) => [...prev, userMsg]);
     const queryText = input;
@@ -626,6 +631,7 @@ const Query = () => {
         id: String(Date.now() + 1),
         role: "ai",
         content: response.answer,
+        project_id: queryProjectId,
         tool_used: response.tool_used,
         references,
       };
