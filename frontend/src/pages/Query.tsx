@@ -309,7 +309,16 @@ const FileTreeItem = memo(({
 FileTreeItem.displayName = "FileTreeItem";
 
 const Query = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const projectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "";
+    if (!projectId) return [];
+    try {
+      const stored = localStorage.getItem(getChatStorageKey(projectId));
+      return stored ? (JSON.parse(stored) as Message[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [selectedRef, setSelectedRef] = useState<{
     file: string;
@@ -351,6 +360,19 @@ const Query = () => {
     [filteredFileTree],
   );
   const isFilteringFiles = deferredFileFilter.trim().length > 0;
+
+  useEffect(() => {
+    if (!queryProjectId) {
+      setMessages([]);
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(getChatStorageKey(queryProjectId));
+      setMessages(stored ? (JSON.parse(stored) as Message[]) : []);
+    } catch {
+      setMessages([]);
+    }
+  }, [queryProjectId]);
 
   useEffect(() => {
     const raw = localStorage.getItem(PROJECT_CONTEXTS_KEY);
