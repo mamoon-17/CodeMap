@@ -11,6 +11,15 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 /**
  * Send a query to the RAG pipeline.
  * project_id is an internal identifier — never render it directly in UI.
@@ -51,7 +60,10 @@ export async function getProjectFiles(
     .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
 
   if (!response.ok) {
-    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+    throw new ApiError(
+      payload.error || `HTTP ${response.status}: ${response.statusText}`,
+      response.status,
+    );
   }
 
   return payload as ProjectFilesResponse;

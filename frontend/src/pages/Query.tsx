@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
   getProjectFileContent,
   getProjectFiles,
   queryCodebase,
@@ -437,10 +438,7 @@ const Query = () => {
       setFileTreeError(
         error instanceof Error ? error.message : "Failed to load repository files",
       );
-      if (
-        error instanceof Error &&
-        (error.message.includes("404") || error.message.includes("not found"))
-      ) {
+      if (error instanceof ApiError && error.status === 404) {
         setMessages([]);
         localStorage.removeItem(getChatStorageKey(nextProjectId));
         localStorage.removeItem(ACTIVE_PROJECT_ID_KEY);
