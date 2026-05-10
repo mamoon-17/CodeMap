@@ -58,6 +58,16 @@ const persistMessages = (projectId: string, messages: Message[]) => {
   }
 };
 
+function isValidMessage(m: unknown): m is Message {
+  if (!m || typeof m !== "object") return false;
+  const msg = m as Record<string, unknown>;
+  return (
+    typeof msg.id === "string" &&
+    (msg.role === "user" || msg.role === "ai") &&
+    typeof msg.content === "string"
+  );
+}
+
 interface Message {
   id: string;
   role: "user" | "ai";
@@ -314,7 +324,9 @@ const Query = () => {
     if (!projectId) return [];
     try {
       const stored = localStorage.getItem(getChatStorageKey(projectId));
-      return stored ? (JSON.parse(stored) as Message[]) : [];
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed.filter(isValidMessage) : [];
     } catch {
       return [];
     }
@@ -368,7 +380,13 @@ const Query = () => {
     }
     try {
       const stored = localStorage.getItem(getChatStorageKey(queryProjectId));
-      setMessages(stored ? (JSON.parse(stored) as Message[]) : []);
+      if (!stored) {
+        setMessages([]);
+        return;
+      }
+      const parsed = JSON.parse(stored);
+      const valid = Array.isArray(parsed) ? parsed.filter(isValidMessage) : [];
+      setMessages(valid);
     } catch {
       setMessages([]);
     }
