@@ -436,7 +436,7 @@ def retrieve_similar_chunks(
         "retrieve_similar_chunks project=%s query_len=%d results=%d elapsed=%.3fs",
         project_id,
         len(query_text),
-        len(matches),
+        min(len(matches), top_k),
         elapsed,
     )
     if elapsed > 5.0:
