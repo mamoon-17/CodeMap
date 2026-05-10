@@ -362,6 +362,7 @@ def retrieve_similar_chunks(
     language: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks from one project or across all project collections."""
+    t0 = time.perf_counter()
     client = _get_chroma_client()
     model = _get_model()
     query_embedding = model.encode(query_text, show_progress_bar=False).tolist()
@@ -429,4 +430,20 @@ def retrieve_similar_chunks(
             m["score"] = m["score"] / max_score
 
     matches.sort(key=lambda item: item["score"], reverse=True)
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "retrieve_similar_chunks project=%s query_len=%d results=%d elapsed=%.3fs",
+        project_id,
+        len(query_text),
+        len(matches),
+        elapsed,
+    )
+    if elapsed > 5.0:
+        logger.warning(
+            "slow_retrieval project=%s elapsed=%.3fs — consider reducing top_k or collection size",
+            project_id,
+            elapsed,
+        )
+
     return matches[:top_k]
