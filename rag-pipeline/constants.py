@@ -14,6 +14,7 @@ RETRIEVAL_THRESHOLDS = {
     "ABSOLUTE_MIN_SCORE": 0.25,
     "SOFT_MIN_SCORE": 0.33,
     "SOFT_MAX_SPREAD": 0.03,
+    "MIN_RETURN_SCORE": 0.1,
 }
 
 # LLM configuration

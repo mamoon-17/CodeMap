@@ -54,6 +54,7 @@ except Exception:
     pass
 
 from services.chunker import smart_chunk_file
+from constants import RETRIEVAL_THRESHOLDS
 
 
 def compute_file_hash(content: str) -> str:
@@ -419,6 +420,8 @@ def retrieve_similar_chunks(
             for match in matches
             if (match.get("metadata") or {}).get("project_id") == project_id
         ]
+
+    matches = [m for m in matches if m["score"] >= RETRIEVAL_THRESHOLDS["MIN_RETURN_SCORE"]]
 
     max_score = max(m["score"] for m in matches) if matches else 1.0
     if max_score > 0:
