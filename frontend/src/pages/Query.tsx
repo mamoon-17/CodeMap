@@ -309,10 +309,10 @@ const Query = () => {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [queryProjectId, setQueryProjectId] = useState(
-    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "manual-project",
+    localStorage.getItem(ACTIVE_PROJECT_ID_KEY) || "",
   );
   const [activeProjectName, setActiveProjectName] = useState(
-    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "manual-project",
+    localStorage.getItem(ACTIVE_PROJECT_NAME_KEY) || "",
   );
   const [projects, setProjects] = useState<ProjectContextItem[]>([]);
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
