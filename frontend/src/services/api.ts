@@ -11,6 +11,11 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+/**
+ * Send a query to the RAG pipeline.
+ * project_id is an internal identifier — never render it directly in UI.
+ * Use project name from state for all display purposes.
+ */
 export async function queryCodebase(
   request: QueryRequest,
 ): Promise<QueryResponse> {
