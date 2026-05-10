@@ -76,18 +76,19 @@ class RagService:
                 return True, 0.0, 0.0
             top_score = max(scores)
             med_score = float(median(scores))
+            spread = top_score - min(scores)
 
             # Absolute minimum: if it's truly low similarity, don't let the LLM guess.
-            if top_score < 0.25:
-                return True, top_score, med_score
-
             # Soft low-signal: only if top is low-ish AND distribution is flat.
             # This avoids penalizing cases where all top-k are similarly relevant.
-            spread = top_score - min(scores)
-            if top_score < 0.33 and spread < 0.03:
-                return True, top_score, med_score
+            low_signal = top_score < 0.25 or (top_score < 0.33 and spread < 0.03)
 
-            return False, top_score, med_score
+            logger.info(
+                "retrieval_quality top=%.3f median=%.3f min=%.3f spread=%.3f low_signal=%s",
+                top_score, med_score, min(scores), spread, low_signal
+            )
+
+            return low_signal, top_score, med_score
 
         # Step 1: First LLM call with tool definition
         first_response = await self.llm_client.generate_with_tools(
@@ -145,6 +146,11 @@ class RagService:
                     tool_used=True,
                     sources=[],
                 )
+
+            logger.info(
+                "chunk_scores scores=%s",
+                [round(float(c.score), 3) for c in chunks]
+            )
 
             # Relevance threshold handling (avoid low-signal hallucinations)
             scores = [float(c.score) for c in chunks if c and c.score is not None]
