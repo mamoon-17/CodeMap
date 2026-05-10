@@ -4,6 +4,7 @@ import { Eye, EyeOff, Github, Check, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LogoHomeLink } from "@/components/LogoHomeLink";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -105,16 +106,7 @@ const SignUp = () => {
     <div className="min-h-screen bg-background">
       <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold text-primary-foreground font-mono">
-                &lt;/&gt;
-              </span>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              CodeMap
-            </span>
-          </Link>
+          <LogoHomeLink />
           <button
             onClick={() => navigate("/")}
             className="text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5"

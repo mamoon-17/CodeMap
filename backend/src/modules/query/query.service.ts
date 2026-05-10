@@ -16,6 +16,22 @@ export interface DeleteVectorsResult {
   deleted: boolean;
 }
 
+export interface ProjectFilesResult {
+  project_id: string;
+  files: string[];
+}
+
+export interface ProjectFileContentResult {
+  project_id: string;
+  file_path: string;
+  content: string;
+  chunks: Array<{
+    start_line: number;
+    end_line: number;
+    text: string;
+  }>;
+}
+
 class QueryService {
   private ragServiceUrl: string;
 
@@ -220,6 +236,88 @@ class QueryService {
       }
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to delete vectors via Python RAG service: ${message}`);
+    }
+  }
+
+  async listProjectFiles(
+    projectId: string,
+  ): Promise<Result<ProjectFilesResult, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const response = await fetch(
+        `${this.ragServiceUrl}/projects/${encodeURIComponent(projectId)}/files`,
+        {
+          signal: controller.signal,
+        },
+      ).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as ProjectFilesResult;
+      if (
+        !data ||
+        typeof data.project_id !== "string" ||
+        !Array.isArray(data.files)
+      ) {
+        return err("Invalid response from Python RAG service (project files)");
+      }
+
+      return ok({
+        project_id: data.project_id,
+        files: data.files.filter((filePath) => typeof filePath === "string"),
+      });
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 10 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to list project files via Python RAG service: ${message}`);
+    }
+  }
+
+  async getProjectFileContent(
+    projectId: string,
+    filePath: string,
+  ): Promise<Result<ProjectFileContentResult, string>> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const url = new URL(
+        `${this.ragServiceUrl}/projects/${encodeURIComponent(projectId)}/files/content`,
+      );
+      url.searchParams.set("path", filePath);
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as ProjectFileContentResult;
+      if (
+        !data ||
+        typeof data.project_id !== "string" ||
+        typeof data.file_path !== "string" ||
+        typeof data.content !== "string" ||
+        !Array.isArray(data.chunks)
+      ) {
+        return err("Invalid response from Python RAG service (project file)");
+      }
+
+      return ok(data);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 10 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to get project file via Python RAG service: ${message}`);
     }
   }
 }

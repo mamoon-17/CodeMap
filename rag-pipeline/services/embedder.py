@@ -53,8 +53,9 @@ try:
 except Exception:
     pass
 
-from services.chunker import smart_chunk_file
+from constants import RETRIEVAL_THRESHOLDS
 from services import chunk_store
+from services.chunker import smart_chunk_file
 
 
 def compute_file_hash(content: str) -> str:
@@ -146,6 +147,85 @@ def project_stats(project_id: str, page_size: int = 2000) -> dict[str, int]:
         offset += page_size
 
     return {"files": len(file_paths), "chunks": chunks}
+
+
+def project_file_paths(project_id: str, page_size: int = 2000) -> list[str]:
+    """Return unique indexed file paths for a project from Chroma metadata."""
+    collection = get_or_create_collection(project_id)
+    if hasattr(collection, "count") and int(collection.count()) == 0:
+        return []
+
+    file_paths: set[str] = set()
+    offset = 0
+    while True:
+        result = collection.get(
+            include=["metadatas"],
+            limit=page_size,
+            offset=offset,
+        )
+        metas = result.get("metadatas") or []
+        if not metas:
+            break
+        for metadata in metas:
+            if isinstance(metadata, dict):
+                file_path = metadata.get("file_path")
+                if isinstance(file_path, str) and file_path:
+                    file_paths.add(file_path)
+        if len(metas) < page_size:
+            break
+        offset += page_size
+
+    return sorted(file_paths, key=lambda path: path.lower())
+
+
+def project_file_content(project_id: str, file_path: str) -> dict[str, Any] | None:
+    """Return indexed chunks and reconstructed content for one project file."""
+    collection = get_or_create_collection(project_id)
+    result = collection.get(
+        where={"file_path": file_path},
+        include=["documents", "metadatas"],
+    )
+
+    documents = result.get("documents") or []
+    metadatas = result.get("metadatas") or []
+    chunks: list[dict[str, Any]] = []
+
+    for idx, document in enumerate(documents):
+        metadata = metadatas[idx] if idx < len(metadatas) else {}
+        if not isinstance(metadata, dict):
+            continue
+        if metadata.get("project_id") != project_id:
+            continue
+        if metadata.get("file_path") != file_path:
+            continue
+        chunks.append({
+            "start_line": int(metadata.get("start_line") or 1),
+            "end_line": int(metadata.get("end_line") or 1),
+            "text": document if isinstance(document, str) else "",
+        })
+
+    if not chunks:
+        return None
+
+    chunks.sort(key=lambda chunk: (chunk["start_line"], chunk["end_line"]))
+    content_parts: list[str] = []
+    last_end_line = 0
+    for chunk in chunks:
+        text = chunk["text"]
+        if chunk["start_line"] <= last_end_line:
+            # Line-window chunks can overlap; trim duplicate leading lines.
+            overlap = last_end_line - chunk["start_line"] + 1
+            text = "".join(text.splitlines(keepends=True)[overlap:])
+        if text:
+            content_parts.append(text)
+        last_end_line = max(last_end_line, chunk["end_line"])
+
+    return {
+        "project_id": project_id,
+        "file_path": file_path,
+        "content": "".join(content_parts),
+        "chunks": chunks,
+    }
 
 
 def ingest_and_embed(
@@ -291,6 +371,7 @@ def retrieve_similar_chunks(
     language: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks from one project or across all project collections."""
+    t0 = time.perf_counter()
     client = _get_chroma_client()
     model = _get_model()
     query_embedding = model.encode(query_text, show_progress_bar=False).tolist()
@@ -343,12 +424,43 @@ def retrieve_similar_chunks(
                 }
             )
 
+    pre_filter_count = len(matches)
     if project_id:
         matches = [
             match
             for match in matches
             if (match.get("metadata") or {}).get("project_id") == project_id
         ]
+    if project_id and len(matches) != pre_filter_count:
+        logger.warning(
+            "cross_project_leakage detected project=%s pre_filter=%d post_filter=%d",
+            project_id,
+            pre_filter_count,
+            len(matches),
+        )
+
+    matches = [m for m in matches if m["score"] >= RETRIEVAL_THRESHOLDS["MIN_RETURN_SCORE"]]
+
+    max_score = max(m["score"] for m in matches) if matches else 1.0
+    if max_score > 0:
+        for m in matches:
+            m["score"] = m["score"] / max_score
 
     matches.sort(key=lambda item: item["score"], reverse=True)
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "retrieve_similar_chunks project=%s query_len=%d results=%d elapsed=%.3fs",
+        project_id,
+        len(query_text),
+        min(len(matches), top_k),
+        elapsed,
+    )
+    if elapsed > 5.0:
+        logger.warning(
+            "slow_retrieval project=%s elapsed=%.3fs — consider reducing top_k or collection size",
+            project_id,
+            elapsed,
+        )
+
     return matches[:top_k]

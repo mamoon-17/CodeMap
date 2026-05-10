@@ -1,7 +1,9 @@
 """
 Embedding Service - Handles vector search for code chunks
 """
+import asyncio
 import logging
+from functools import partial
 
 from models.types_models import Chunk, ChunkMetadata
 from services.embedder import retrieve_similar_chunks
@@ -40,11 +42,16 @@ class EmbeddingService:
             f"(top_k={top_k}, language={language})"
         )
 
-        raw_matches = retrieve_similar_chunks(
-            query_text=query_text,
-            top_k=top_k,
-            project_id=project_id,
-            language=language,
+        loop = asyncio.get_running_loop()
+        raw_matches = await loop.run_in_executor(
+            None,
+            partial(
+                retrieve_similar_chunks,
+                query_text=query_text,
+                top_k=top_k,
+                project_id=project_id,
+                language=language,
+            )
         )
         chunks = []
         for raw in raw_matches:

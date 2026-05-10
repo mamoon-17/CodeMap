@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { projectService } from "./project.service";
+import { queryService } from "../query/query.service";
 
 class ProjectController {
   async listAll(_req: Request, res: Response) {
@@ -57,6 +58,47 @@ class ProjectController {
       indexed: result.value.indexed,
       fileCount: result.value.project.fileCount,
     });
+  }
+
+  async listFiles(req: Request, res: Response) {
+    const rawId = req.params.id;
+    const projectId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!projectId) {
+      res.status(400).json({ error: "Missing project id" });
+      return;
+    }
+
+    const result = await queryService.listProjectFiles(projectId);
+    if (result.isErr()) {
+      res.status(500).json({ error: result.error });
+      return;
+    }
+
+    res.status(200).json(result.value);
+  }
+
+  async getFileContent(req: Request, res: Response) {
+    const rawId = req.params.id;
+    const projectId = Array.isArray(rawId) ? rawId[0] : rawId;
+    const rawPath = req.query.path;
+    const filePath = Array.isArray(rawPath) ? rawPath[0] : rawPath;
+
+    if (!projectId) {
+      res.status(400).json({ error: "Missing project id" });
+      return;
+    }
+    if (!filePath || typeof filePath !== "string") {
+      res.status(400).json({ error: "Missing file path" });
+      return;
+    }
+
+    const result = await queryService.getProjectFileContent(projectId, filePath);
+    if (result.isErr()) {
+      res.status(500).json({ error: result.error });
+      return;
+    }
+
+    res.status(200).json(result.value);
   }
 
   async deleteVectors(req: Request, res: Response) {

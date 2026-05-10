@@ -9,6 +9,14 @@ QUERY_CONSTRAINTS = {
     "DEFAULT_TOP_K": 5,
 }
 
+# Retrieval quality thresholds (used by is_low_signal_retrieval)
+RETRIEVAL_THRESHOLDS = {
+    "ABSOLUTE_MIN_SCORE": 0.25,
+    "SOFT_MIN_SCORE": 0.33,
+    "SOFT_MAX_SPREAD": 0.03,
+    "MIN_RETURN_SCORE": 0.1,
+}
+
 # LLM configuration
 LLM_CONFIG = {
     "MODEL": "gpt-4o-mini",  # Fast and cost-effective
@@ -23,6 +31,7 @@ ERROR_MESSAGES = {
     "EMBEDDING_SERVICE_UNAVAILABLE": "Embedding service unavailable. Please try again later.",
     "NO_RESULTS": "No relevant code was found in the repository for your query.",
     "MISSING_API_KEY": "OPENAI_API_KEY not configured. Please set it in .env file.",
+    "MISSING_PROJECT_ID": "A valid project must be selected before querying.",
 }
 
 # Tool definitions for LLM (OpenAI function calling format)
