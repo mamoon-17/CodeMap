@@ -31,6 +31,7 @@ ERROR_MESSAGES = {
     "EMBEDDING_SERVICE_UNAVAILABLE": "Embedding service unavailable. Please try again later.",
     "NO_RESULTS": "No relevant code was found in the repository for your query.",
     "MISSING_API_KEY": "OPENAI_API_KEY not configured. Please set it in .env file.",
+    "MISSING_PROJECT_ID": "A valid project must be selected before querying.",
 }
 
 # Tool definitions for LLM (OpenAI function calling format)
