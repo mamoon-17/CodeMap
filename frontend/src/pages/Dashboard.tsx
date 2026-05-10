@@ -153,6 +153,9 @@ const Dashboard = () => {
     projectName: string,
     source: "github" | "upload",
   ) => {
+    if (activeProjectId && activeProjectId !== projectId) {
+      console.info("Project switched from", activeProjectId, "to", projectId);
+    }
     setActiveProjectId(projectId);
     setActiveProjectName(projectName);
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
