@@ -595,7 +595,7 @@ const Dashboard = () => {
             </p>
             {activeProjectId && (
               <p className="text-xs text-muted-foreground mt-1">
-                Active project: {activeProjectName || activeProjectId}
+                Active project: {activeProjectName || "Unknown project"}
               </p>
             )}
           </div>

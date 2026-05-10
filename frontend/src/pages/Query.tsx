@@ -590,7 +590,7 @@ const Query = () => {
             </span>
             <span className="text-muted-foreground/40">/</span>
             <span className="text-xs text-muted-foreground truncate max-w-[220px]">
-              {activeProjectName}
+              {activeProjectName || "No project selected"}
             </span>
           </div>
           <Link
