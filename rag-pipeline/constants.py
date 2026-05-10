@@ -17,11 +17,6 @@ RETRIEVAL_THRESHOLDS = {
     "MIN_RETURN_SCORE": 0.1,
 }
 
-# Input validation thresholds
-VALIDATION = {
-    "MIN_PROJECT_ID_LENGTH": 8,
-}
-
 # LLM configuration
 LLM_CONFIG = {
     "MODEL": "gpt-4o-mini",  # Fast and cost-effective
