@@ -47,6 +47,17 @@ const FILE_TREE_MAX_WIDTH = 640;
 const getChatStorageKey = (projectId: string) =>
   `${CHAT_HISTORY_KEY_PREFIX}${projectId}`;
 
+const persistMessages = (projectId: string, messages: Message[]) => {
+  if (!projectId) return;
+  try {
+    const toStore = messages.slice(-MAX_STORED_MESSAGES);
+    localStorage.setItem(getChatStorageKey(projectId), JSON.stringify(toStore));
+  } catch {
+    // localStorage may be unavailable (private mode) or full (QuotaExceededError);
+    // fail silently so the chat keeps working even if persistence is degraded.
+  }
+};
+
 interface Message {
   id: string;
   role: "user" | "ai";
@@ -563,7 +574,11 @@ const Query = () => {
         references,
       };
 
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => {
+        const updated = [...prev, aiMsg];
+        persistMessages(queryProjectId, updated);
+        return updated;
+      });
 
       // Auto-select first reference if available
       if (references && references.length > 0) {
@@ -576,7 +591,11 @@ const Query = () => {
         role: "ai",
         content: `Error: ${error instanceof Error ? error.message : "Failed to get response from backend"}`,
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => {
+        const updated = [...prev, errorMsg];
+        persistMessages(queryProjectId, updated);
+        return updated;
+      });
     } finally {
       setIsLoading(false);
     }
