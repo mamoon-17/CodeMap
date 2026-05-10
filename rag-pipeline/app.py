@@ -10,8 +10,10 @@ This service combines:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import anyio
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config import config
 from models.schemas import HealthResponse
@@ -96,6 +98,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    from config import config
+    path = request.url.path
+    if path.startswith("/ingest"):
+        timeout = config.INGEST_TIMEOUT
+    elif path.startswith("/embed"):
+        timeout = config.EMBED_TIMEOUT
+    else:
+        timeout = config.RAG_REQUEST_TIMEOUT
+    try:
+        async with anyio.fail_after(timeout):
+            return await call_next(request)
+    except TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={"error": "Request timed out",
+                     "detail": f"Request exceeded {timeout}s limit"}
+        )
 
 
 # ---------------------------------------------------------------------------
