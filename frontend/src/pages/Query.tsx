@@ -584,6 +584,15 @@ const Query = () => {
   }, [isResizingRight, handleMouseMoveRight, handleMouseUp]);
 
   const handleSend = async () => {
+    if (!queryProjectId || !queryProjectId.trim()) {
+      const errorMsg: Message = {
+        id: String(Date.now()),
+        role: "ai",
+        content: "Please select a repository from the dashboard before querying.",
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      return;
+    }
     if (!input.trim() || !queryProjectId.trim() || isLoading) return;
 
     updateActiveProject(queryProjectId.trim());
