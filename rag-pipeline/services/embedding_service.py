@@ -42,7 +42,7 @@ class EmbeddingService:
             f"(top_k={top_k}, language={language})"
         )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         raw_matches = await loop.run_in_executor(
             None,
             partial(
