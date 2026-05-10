@@ -153,7 +153,7 @@ const Dashboard = () => {
     projectName: string,
     source: "github" | "upload",
   ) => {
-    if (activeProjectId && activeProjectId !== projectId) {
+    if (import.meta.env.DEV && activeProjectId && activeProjectId !== projectId) {
       console.info("Project switched from", activeProjectId, "to", projectId);
     }
     setActiveProjectId(projectId);
