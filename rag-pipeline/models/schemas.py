@@ -2,7 +2,7 @@
 Pydantic models for request/response schemas
 """
 from pydantic import BaseModel, Field, field_validator
-from constants import QUERY_CONSTRAINTS, ERROR_MESSAGES
+from constants import QUERY_CONSTRAINTS, ERROR_MESSAGES, VALIDATION
 
 
 class QueryRequest(BaseModel):
@@ -31,6 +31,8 @@ class QueryRequest(BaseModel):
         """Validate project identifier is not empty after stripping"""
         if not v.strip():
             raise ValueError("project_id is required")
+        if len(v) < VALIDATION["MIN_PROJECT_ID_LENGTH"]:
+            raise ValueError("project_id appears invalid — must be a valid UUID")
         return v.strip()
 
     @field_validator("language")
