@@ -101,6 +101,10 @@ function timeAgo(dateStr: string): string {
   return `${days} day${days > 1 ? "s" : ""} ago`;
 }
 
+const clearProjectChatHistory = (projectId: string) => {
+  localStorage.removeItem(`chatHistory_${projectId}`);
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repo[]>([]);

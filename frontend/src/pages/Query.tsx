@@ -437,6 +437,15 @@ const Query = () => {
       setFileTreeError(
         error instanceof Error ? error.message : "Failed to load repository files",
       );
+      if (
+        error instanceof Error &&
+        (error.message.includes("404") || error.message.includes("not found"))
+      ) {
+        setMessages([]);
+        localStorage.removeItem(getChatStorageKey(nextProjectId));
+        localStorage.removeItem(ACTIVE_PROJECT_ID_KEY);
+        localStorage.removeItem(ACTIVE_PROJECT_NAME_KEY);
+      }
     } finally {
       setIsFileTreeLoading(false);
     }
