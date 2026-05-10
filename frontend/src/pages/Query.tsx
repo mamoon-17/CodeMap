@@ -328,7 +328,13 @@ const Query = () => {
       const stored = localStorage.getItem(getChatStorageKey(projectId));
       if (!stored) return [];
       const parsed = JSON.parse(stored);
-      return Array.isArray(parsed) ? parsed.filter(isValidMessage) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (m) =>
+              isValidMessage(m) &&
+              (!m.project_id || m.project_id === projectId),
+          )
+        : [];
     } catch {
       return [];
     }
@@ -652,6 +658,7 @@ const Query = () => {
         id: String(Date.now() + 1),
         role: "ai",
         content: `Error: ${error instanceof Error ? error.message : "Failed to get response from backend"}`,
+        project_id: queryProjectId,
       };
       setMessages((prev) => {
         const updated = [...prev, errorMsg];
