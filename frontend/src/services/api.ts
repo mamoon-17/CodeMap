@@ -21,13 +21,19 @@ export class ApiError extends Error {
 }
 
 /**
- * Send a query to the RAG pipeline.
+ * Query the RAG pipeline for a specific project.
+ * Throws immediately if project_id is missing to prevent
+ * cross-project data leakage at the API layer.
+ *
  * project_id is an internal identifier — never render it directly in UI.
  * Use project name from state for all display purposes.
  */
 export async function queryCodebase(
   request: QueryRequest,
 ): Promise<QueryResponse> {
+  if (!request.project_id || !request.project_id.trim()) {
+    throw new Error("project_id is required to query the codebase");
+  }
   const response = await fetch(`${API_BASE_URL}/query`, {
     method: "POST",
     headers: {
