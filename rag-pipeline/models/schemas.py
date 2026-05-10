@@ -1,7 +1,7 @@
 """
 Pydantic models for request/response schemas
 """
-import uuid
+import re
 
 from pydantic import BaseModel, Field, field_validator
 from constants import QUERY_CONSTRAINTS, ERROR_MESSAGES
@@ -30,14 +30,14 @@ class QueryRequest(BaseModel):
     @field_validator("project_id")
     @classmethod
     def validate_project_id(cls, v: str) -> str:
-        """Validate project identifier is not empty after stripping"""
-        if not v.strip():
+        """Allow UUIDs, GitHub-linked ids (gh_…), and other backend project keys."""
+        s = v.strip()
+        if not s:
             raise ValueError("project_id is required")
-        try:
-            uuid.UUID(v.strip())
-        except ValueError:
-            raise ValueError("project_id must be a valid UUID")
-        return v.strip()
+        # Chroma collection names and metadata use this string; keep it URL/path safe.
+        if len(s) > 256 or not re.fullmatch(r"[a-zA-Z0-9_.-]+", s):
+            raise ValueError("project_id must be a non-empty alphanumeric id (max 256 chars)")
+        return s
 
     @field_validator("language")
     @classmethod
