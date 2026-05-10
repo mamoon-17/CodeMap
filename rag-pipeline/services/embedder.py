@@ -420,5 +420,10 @@ def retrieve_similar_chunks(
             if (match.get("metadata") or {}).get("project_id") == project_id
         ]
 
+    max_score = max(m["score"] for m in matches) if matches else 1.0
+    if max_score > 0:
+        for m in matches:
+            m["score"] = m["score"] / max_score
+
     matches.sort(key=lambda item: item["score"], reverse=True)
     return matches[:top_k]
