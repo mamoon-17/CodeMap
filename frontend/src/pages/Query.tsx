@@ -799,6 +799,21 @@ const Query = () => {
                   <PanelLeftOpen size={16} />
                 </button>
               )}
+              {messages.length > 0 && !isLoading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessages([]);
+                    if (queryProjectId) {
+                      localStorage.removeItem(getChatStorageKey(queryProjectId));
+                    }
+                  }}
+                  className="rounded p-1.5 text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+                  title="Clear chat history"
+                >
+                  <X size={16} />
+                </button>
+              )}
               <div className="relative flex-1">
                 <Search
                   size={16}
