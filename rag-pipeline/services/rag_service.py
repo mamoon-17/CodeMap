@@ -160,6 +160,18 @@ class RagService:
 
             # Relevance threshold handling (avoid low-signal hallucinations)
             scores = [float(c.score) for c in chunks if c and c.score is not None]
+            if scores:
+                logger.info(
+                    "retrieval_metrics query='%s' project=%s chunks=%d "
+                    "top=%.3f median=%.3f mean=%.3f min=%.3f",
+                    query_text,
+                    project_id,
+                    len(chunks),
+                    max(scores),
+                    float(median(scores)),
+                    sum(scores) / len(scores),
+                    min(scores),
+                )
             low_signal, top_score, med_score = is_low_signal_retrieval(scores)
             if low_signal:
                 logger.warning(
