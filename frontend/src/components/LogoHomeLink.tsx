@@ -15,11 +15,13 @@ export const LogoHomeLink = ({ className }: LogoHomeLinkProps) => (
     className={className || "flex items-center gap-2.5"}
     aria-label="Go to CodeMap home"
   >
-    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-      <span className="text-xs font-bold text-primary-foreground font-mono">
-        &lt;/&gt;
-      </span>
-    </div>
+    <img
+      src="/codemap.svg"
+      alt=""
+      width={32}
+      height={32}
+      className="h-8 w-8 shrink-0 rounded-lg"
+    />
     <span className="text-lg font-semibold tracking-tight text-foreground">
       CodeMap
     </span>

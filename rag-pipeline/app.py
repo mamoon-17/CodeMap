@@ -111,7 +111,8 @@ async def timeout_middleware(request: Request, call_next):
     else:
         timeout = config.RAG_REQUEST_TIMEOUT
     try:
-        async with anyio.fail_after(timeout):
+        # anyio.fail_after is a sync context manager (AnyIO 4+); async with is invalid.
+        with anyio.fail_after(timeout):
             return await call_next(request)
     except TimeoutError:
         return JSONResponse(

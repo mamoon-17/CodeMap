@@ -83,6 +83,14 @@ const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
 
+/** Phased status lines while a ZIP upload or retry is in flight (mirrors GitHub re-index job UI). */
+const ZIP_INGEST_PHASES = [
+  { step: "upload", message: "Transferring archive to the server…" },
+  { step: "extract", message: "Extracting supported source files from the ZIP…" },
+  { step: "embed", message: "Embedding code chunks for semantic search…" },
+  { step: "finalize", message: "Finalizing the search index…" },
+] as const;
+
 function mapStatus(
   backendStatus: string,
 ): "indexed" | "processing" | "available" | "failed" {
@@ -129,6 +137,11 @@ const Dashboard = () => {
   >({});
   const [retryingUploadId, setRetryingUploadId] = useState<string | null>(null);
   const [uploadRetryErrorById, setUploadRetryErrorById] = useState<Record<string, string>>({});
+  /** Set to the temp or project id while a ZIP is uploading / retry-indexing; drives phased status text. */
+  const [zipIngestFeedbackId, setZipIngestFeedbackId] = useState<string | null>(
+    null,
+  );
+  const [zipIngestPhase, setZipIngestPhase] = useState(0);
   const [expandedSkipsRepoId, setExpandedSkipsRepoId] = useState<string | null>(
     null,
   );
@@ -267,6 +280,15 @@ const Dashboard = () => {
     void loadProfileAndRepos();
   }, [loadProfileAndRepos]);
 
+  useEffect(() => {
+    if (!zipIngestFeedbackId) return;
+    setZipIngestPhase(0);
+    const timer = setInterval(() => {
+      setZipIngestPhase((p) => (p + 1) % ZIP_INGEST_PHASES.length);
+    }, 2800);
+    return () => clearInterval(timer);
+  }, [zipIngestFeedbackId]);
+
   const handleReindexFullRepo = async (repoId: string) => {
     const token = localStorage.getItem("accessToken") || "";
     if (!token) {
@@ -376,6 +398,7 @@ const Dashboard = () => {
           source: "upload",
         },
       ]);
+      setZipIngestFeedbackId(tempId);
       setZipFile(null);
       setShowAddModal(false);
 
@@ -418,6 +441,8 @@ const Dashboard = () => {
         setUploadError(e instanceof Error ? e.message : "Upload failed");
         setUploadStatus("error");
         setShowAddModal(true);
+      } finally {
+        setZipIngestFeedbackId(null);
       }
       return;
     }
@@ -451,6 +476,7 @@ const Dashboard = () => {
 
   const handleRetryUploadIndex = async (projectId: string) => {
     setRetryingUploadId(projectId);
+    setZipIngestFeedbackId(projectId);
     setUploadRetryErrorById((prev) => ({ ...prev, [projectId]: "" }));
     setRepos((prev) =>
       prev.map((r) =>
@@ -487,6 +513,7 @@ const Dashboard = () => {
       );
     } finally {
       setRetryingUploadId(null);
+      setZipIngestFeedbackId(null);
     }
   };
 
@@ -749,7 +776,23 @@ const Dashboard = () => {
                     )}
                   </div>
                 </div>
-                {repo.status === "processing" && (
+                {repo.status === "processing" &&
+                  repo.source === "upload" &&
+                  zipIngestFeedbackId === repo.id && (
+                    <div className="mt-3 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin shrink-0" />
+                        <span className="truncate">
+                          Step: {ZIP_INGEST_PHASES[zipIngestPhase].step}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground truncate">
+                        {ZIP_INGEST_PHASES[zipIngestPhase].message}
+                      </p>
+                    </div>
+                  )}
+                {repo.status === "processing" &&
+                  !(repo.source === "upload" && zipIngestFeedbackId === repo.id) && (
                   <div className="mt-3">
                     <div className="h-1 w-full rounded-full bg-secondary overflow-hidden">
                       <div className="h-full w-2/3 rounded-full bg-warning animate-pulse-subtle" />
