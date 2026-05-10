@@ -9,7 +9,7 @@ from statistics import median
 from services.llm.llm_client import get_llm_client
 from services.embedding_service import get_embedding_service
 from models.types_models import AgenticQueryResult, ToolCall
-from constants import ERROR_MESSAGES
+from constants import ERROR_MESSAGES, RETRIEVAL_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,13 @@ class RagService:
             # Absolute minimum: if it's truly low similarity, don't let the LLM guess.
             # Soft low-signal: only if top is low-ish AND distribution is flat.
             # This avoids penalizing cases where all top-k are similarly relevant.
-            low_signal = top_score < 0.25 or (top_score < 0.33 and spread < 0.03)
+            low_signal = (
+                top_score < RETRIEVAL_THRESHOLDS["ABSOLUTE_MIN_SCORE"]
+                or (
+                    top_score < RETRIEVAL_THRESHOLDS["SOFT_MIN_SCORE"]
+                    and spread < RETRIEVAL_THRESHOLDS["SOFT_MAX_SPREAD"]
+                )
+            )
 
             logger.info(
                 "retrieval_quality top=%.3f median=%.3f min=%.3f spread=%.3f low_signal=%s",

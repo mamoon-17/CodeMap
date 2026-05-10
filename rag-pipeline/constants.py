@@ -9,6 +9,13 @@ QUERY_CONSTRAINTS = {
     "DEFAULT_TOP_K": 5,
 }
 
+# Retrieval quality thresholds (used by is_low_signal_retrieval)
+RETRIEVAL_THRESHOLDS = {
+    "ABSOLUTE_MIN_SCORE": 0.25,
+    "SOFT_MIN_SCORE": 0.33,
+    "SOFT_MAX_SPREAD": 0.03,
+}
+
 # LLM configuration
 LLM_CONFIG = {
     "MODEL": "gpt-4o-mini",  # Fast and cost-effective
