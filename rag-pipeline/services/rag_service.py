@@ -44,9 +44,7 @@ class RagService:
 
         if not project_id or not project_id.strip():
             logger.error("agentic_query called without project_id — rejecting")
-            from constants import ERROR_MESSAGES
-            raise ValueError(ERROR_MESSAGES.get("MISSING_PROJECT_ID",
-                             "project_id is required for all queries"))
+            raise ValueError(ERROR_MESSAGES["MISSING_PROJECT_ID"])
 
         def is_repo_question(q: str) -> bool:
             t = (q or "").strip().lower()
