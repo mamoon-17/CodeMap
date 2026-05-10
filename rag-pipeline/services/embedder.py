@@ -53,8 +53,9 @@ try:
 except Exception:
     pass
 
-from services.chunker import smart_chunk_file
 from constants import RETRIEVAL_THRESHOLDS
+from services import chunk_store
+from services.chunker import smart_chunk_file
 
 
 def compute_file_hash(content: str) -> str:
@@ -106,8 +107,16 @@ def _reset_project_collection(project_id: str):
 
 
 def delete_project_vectors(project_id: str) -> None:
-    """Delete all vectors for a project by dropping its Chroma collection."""
+    """Delete all vectors and chunk metadata for a project."""
     _reset_project_collection(project_id)
+    try:
+        chunk_store.delete_project(project_id)
+    except Exception as exc:
+        logger.warning(
+            "Failed to delete chunk metadata for project %s: %s",
+            project_id,
+            exc,
+        )
 
 
 def project_stats(project_id: str, page_size: int = 2000) -> dict[str, int]:

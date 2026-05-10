@@ -9,6 +9,8 @@ import {
   Upload,
   Github,
   RefreshCw,
+  User,
+  Settings,
   LogOut,
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
@@ -161,10 +163,6 @@ const Dashboard = () => {
     localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
     localStorage.setItem(ACTIVE_PROJECT_NAME_KEY, projectName);
     saveProjectContext({ id: projectId, name: projectName, source });
-  };
-
-  const startOAuth = (provider: "google" | "github") => {
-    window.location.href = `${API_BASE_URL}/auth/${provider}`;
   };
 
   const authHeaders = () => {
@@ -503,6 +501,40 @@ const Dashboard = () => {
       currentUser.authProvider.slice(1)
     : "Unknown";
 
+  const startGithubConnect = async () => {
+    const headers = authHeaders();
+    if (!headers) {
+      setReposError("Please login to connect GitHub.");
+      return;
+    }
+
+    setReposError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/github/connect`, {
+        headers,
+        credentials: "include",
+      });
+
+      const payload = await response
+        .json()
+        .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+      if (!response.ok || typeof payload.redirectUrl !== "string") {
+        throw new Error(payload.error || "Failed to start GitHub connect");
+      }
+
+      setShowDropdown(false);
+      window.location.href = payload.redirectUrl;
+    } catch (error) {
+      setReposError(
+        error instanceof Error
+          ? error.message
+          : "Failed to start GitHub connect",
+      );
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
@@ -524,7 +556,7 @@ const Dashboard = () => {
                   <img
                     src={currentUser.avatarUrl}
                     alt="User avatar"
-                    className="h-7 w-7 rounded-full object-cover"
+                    className="h-7 w-7 rounded-full object-contain bg-white"
                   />
                 ) : (
                   <span className="text-xs font-medium text-primary">
@@ -550,27 +582,40 @@ const Dashboard = () => {
                         {currentUser?.email || "No email"}
                       </p>
                       <div className="mt-1 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                        Provider: {providerLabel}
+                        Signed in with {providerLabel}
                       </div>
                     </div>
-                    {currentUser?.authProvider === "github" && (
-                      <button
-                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
-                        onClick={() => startOAuth("github")}
-                      >
-                        <RefreshCw size={15} />
-                        Reconnect GitHub
-                      </button>
-                    )}
-                    {currentUser?.authProvider === "google" && (
-                      <button
-                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
-                        onClick={() => startOAuth("google")}
-                      >
-                        <RefreshCw size={15} />
-                        Reconnect Google
-                      </button>
-                    )}
+                    {currentUser?.authProvider === "google" &&
+                      !currentUser.githubConnected && (
+                        <button
+                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                          onClick={startGithubConnect}
+                        >
+                          <Github size={15} />
+                          Connect with GitHub
+                        </button>
+                      )}
+                    <div className="my-1 h-px bg-border" />
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                      onClick={() => {
+                        setShowDropdown(false);
+                        navigate("/profile");
+                      }}
+                    >
+                      <User size={15} />
+                      View Profile
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                      onClick={() => {
+                        setShowDropdown(false);
+                        navigate("/settings");
+                      }}
+                    >
+                      <Settings size={15} />
+                      Settings
+                    </button>
                     <div className="my-1 h-px bg-border" />
                     <button
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-secondary transition-colors"

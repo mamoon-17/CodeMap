@@ -5,7 +5,7 @@ import { ok, err, Result } from "neverthrow";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 
-export type OAuthIntent = "login" | "signup";
+export type OAuthIntent = "login" | "signup" | "connect";
 
 export class AuthService {
   private getUserRepository(): Repository<User> {
@@ -20,6 +20,7 @@ export class AuthService {
     avatarUrl?: string;
     oauthAccessToken?: string;
     intent?: OAuthIntent;
+    connectUserId?: string;
   }): Promise<Result<User, string>> {
     const repository = this.getUserRepository();
     const intent = params.intent || "login";
@@ -33,6 +34,106 @@ export class AuthService {
       const existingByProvider = await repository.findOne({
         where: providerWhere,
       });
+
+      if (intent === "connect") {
+        if (params.connectUserId) {
+          const existingById = await repository.findOne({
+            where: { id: params.connectUserId },
+          });
+
+          if (!existingById) {
+            return err(
+              "No existing account found to link. Please login before connecting.",
+            );
+          }
+
+          if (existingByProvider && existingByProvider.id !== existingById.id) {
+            return err(
+              `This ${params.provider.toLowerCase()} account is already linked to another user.`,
+            );
+          }
+
+          if (params.provider === AuthProvider.GOOGLE) {
+            if (
+              existingById.googleId &&
+              existingById.googleId !== params.providerId
+            ) {
+              return err(
+                "This Google account is already linked to another user.",
+              );
+            }
+
+            existingById.googleId = params.providerId;
+          } else {
+            if (
+              existingById.githubId &&
+              existingById.githubId !== params.providerId
+            ) {
+              return err("This GitHub account is already linked to another user.");
+            }
+
+            existingById.githubId = params.providerId;
+            if (params.oauthAccessToken) {
+              existingById.githubAccessToken = params.oauthAccessToken;
+            }
+          }
+
+          if (params.avatarUrl) {
+            existingById.avatarUrl = params.avatarUrl;
+          }
+
+          existingById.lastLogin = new Date();
+          const updatedUser = await repository.save(existingById);
+          return ok(updatedUser);
+        }
+
+        const existingByEmail = await repository.findOne({
+          where: { email: params.email },
+        });
+
+        if (!existingByEmail) {
+          return err(
+            `No existing account found to link. Please login with ${params.provider.toLowerCase()}.`,
+          );
+        }
+
+        if (existingByProvider && existingByProvider.id !== existingByEmail.id) {
+          return err(
+            `This ${params.provider.toLowerCase()} account is already linked to another user.`,
+          );
+        }
+
+        if (params.provider === AuthProvider.GOOGLE) {
+          if (
+            existingByEmail.googleId &&
+            existingByEmail.googleId !== params.providerId
+          ) {
+            return err("This Google account is already linked to another user.");
+          }
+
+          existingByEmail.googleId = params.providerId;
+        } else {
+          if (
+            existingByEmail.githubId &&
+            existingByEmail.githubId !== params.providerId
+          ) {
+            return err("This GitHub account is already linked to another user.");
+          }
+
+          existingByEmail.githubId = params.providerId;
+          if (params.oauthAccessToken) {
+            existingByEmail.githubAccessToken = params.oauthAccessToken;
+          }
+        }
+
+        if (params.avatarUrl) {
+          existingByEmail.avatarUrl = params.avatarUrl;
+        }
+
+        existingByEmail.lastLogin = new Date();
+        const updatedUser = await repository.save(existingByEmail);
+        return ok(updatedUser);
+      }
 
       if (existingByProvider) {
         if (intent === "signup") {
@@ -66,8 +167,30 @@ export class AuthService {
         }
 
         if (params.provider === AuthProvider.GOOGLE) {
+          if (
+            existingByEmail.googleId &&
+            existingByEmail.googleId !== params.providerId
+          ) {
+            return err("This Google account is already linked to another user.");
+          }
+
+          const linkedGoogleUser = await repository.findOne({
+            where: { googleId: params.providerId },
+          });
+
+          if (linkedGoogleUser && linkedGoogleUser.id !== existingByEmail.id) {
+            return err("This Google account is already linked to another user.");
+          }
+
           existingByEmail.googleId = params.providerId;
         } else {
+          if (
+            existingByEmail.githubId &&
+            existingByEmail.githubId !== params.providerId
+          ) {
+            return err("This GitHub account is already linked to another user.");
+          }
+
           const linkedGithubUser = await repository.findOne({
             where: { githubId: params.providerId },
           });

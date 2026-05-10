@@ -8,6 +8,8 @@ import Signup from "./pages/Signup";
 import OAuthCallback from "./pages/OAuthCallback";
 import Dashboard from "./pages/Dashboard";
 import UploadRepo from "./components/UploadRepo";
+import Settings from "./pages/Settings";
+import Profile from "./pages/Profile";
 
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 
@@ -26,6 +28,8 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/profile" element={<Profile />} />
         <Route
           path="/query"
           element={

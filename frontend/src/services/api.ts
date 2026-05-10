@@ -162,3 +162,24 @@ export async function retryProjectIndex(projectId: string): Promise<{
     fileCount: number;
   };
 }
+
+export async function deleteAccount(
+  token: string,
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as { success: boolean; message?: string; error?: string };
+}

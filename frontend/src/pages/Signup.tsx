@@ -283,7 +283,7 @@ const SignUp = () => {
             </Button>
             <Button
               type="button"
-              className="gap-2 text-sm h-10 bg-white text-[#3c4043] border border-[#dadce0] hover:bg-[#f8f9fa]"
+              className="gap-2 text-sm h-10 bg-white !text-[#3c4043] border border-[#dadce0] hover:bg-[#f8f9fa]"
               onClick={() => startOAuth("google")}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">

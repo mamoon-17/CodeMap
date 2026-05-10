@@ -3,6 +3,12 @@ import { User } from "./user.entity";
 import { AppDataSource } from "../../config/datasource";
 import { Result, ok, err } from "neverthrow";
 import { RepositoryRecord } from "../project/repository.entity";
+import { Project } from "../project/project.entity";
+import { ReindexJob } from "../reindex/reindex.entity";
+import { queryService } from "../query/query.service";
+import { deleteObject } from "../../integrations/supabase/supabaseClient";
+
+const STORAGE_BUCKET = "codemap-projects";
 
 export interface GithubRepository {
   id: number;
@@ -224,6 +230,109 @@ class UserService {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to fetch user profile: ${message}`);
+    }
+  }
+
+  async deleteUser(userId: string): Promise<Result<void, string>> {
+    try {
+      const repo = this.getRepo();
+      const result = await repo.delete({ id: userId });
+
+      if (!result.affected) {
+        return err("User not found");
+      }
+
+      return ok(undefined);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to delete user: ${message}`);
+    }
+  }
+
+  async deleteUserAccount(
+    userId: string,
+  ): Promise<Result<{ warnings: string[] }, string>> {
+    const warnings: string[] = [];
+    console.info(`[accountDelete] start userId=${userId}`);
+    console.info("[accountDelete] cascade delete not configured; running explicit cleanup");
+
+    try {
+      const userRepo = this.getRepo();
+      const user = await userRepo.findOne({ where: { id: userId } });
+      if (!user) {
+        return err("User not found");
+      }
+
+      const projectRepo = AppDataSource.getRepository(Project);
+      const repoRecordRepo = this.getRepositoryRecordRepo();
+      const reindexJobRepo = AppDataSource.getRepository(ReindexJob);
+
+      const projects = await projectRepo.find();
+      const repoRecords = await repoRecordRepo.find();
+
+      console.info(
+        `[accountDelete] targets projects=${projects.length} repos=${repoRecords.length}`,
+      );
+
+      const projectIdsFromUploads = projects.map((project) => project.id);
+      const vectorProjectIds = new Set<string>();
+
+      for (const projectId of projectIdsFromUploads) {
+        vectorProjectIds.add(projectId);
+      }
+      for (const record of repoRecords) {
+        vectorProjectIds.add(`gh_${record.githubRepoId}`);
+      }
+
+      if (vectorProjectIds.size > 0) {
+        console.info(
+          `[accountDelete] deleting vectors for ${vectorProjectIds.size} projects`,
+        );
+        for (const projectId of vectorProjectIds) {
+          const deleteResult = await queryService.deleteProjectVectors(projectId);
+          if (deleteResult.isErr()) {
+            const message = `Failed to delete vectors for ${projectId}: ${deleteResult.error}`;
+            console.warn(`[accountDelete] ${message}`);
+            warnings.push(message);
+          }
+        }
+      }
+
+      for (const project of projects) {
+        if (!project.zipStoragePath) continue;
+        try {
+          await deleteObject(STORAGE_BUCKET, project.zipStoragePath);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          const warning = `Failed to delete storage object ${project.zipStoragePath}: ${message}`;
+          console.warn(`[accountDelete] ${warning}`);
+          warnings.push(warning);
+        }
+      }
+
+      if (projectIdsFromUploads.length > 0) {
+        await projectRepo.delete({ id: In(projectIdsFromUploads) });
+      }
+
+      if (repoRecords.length > 0) {
+        await repoRecordRepo.delete({ id: In(repoRecords.map((record) => record.id)) });
+      }
+
+      await reindexJobRepo.delete({ userId });
+
+      const deleteResult = await userRepo.delete({ id: userId });
+      if (!deleteResult.affected) {
+        return err("Failed to delete user record");
+      }
+
+      console.info(
+        `[accountDelete] completed userId=${userId} warnings=${warnings.length}`,
+      );
+      return ok({ warnings });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`[accountDelete] failed userId=${userId}: ${message}`);
+      return err(`Failed to delete account: ${message}`);
     }
   }
 

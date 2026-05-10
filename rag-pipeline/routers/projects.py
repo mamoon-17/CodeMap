@@ -62,7 +62,7 @@ def get_project_file_content(project_id: str, path: str = Query(..., min_length=
     },
 )
 def delete_vectors(project_id: str):
-    """Delete all vectors for this project (drops the Chroma collection)."""
+    """Delete all vectors and chunk metadata for this project."""
     delete_project_vectors(project_id)
     return {"project_id": project_id, "deleted": True}
 
