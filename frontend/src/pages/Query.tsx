@@ -38,9 +38,14 @@ import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 const ACTIVE_PROJECT_ID_KEY = "activeProjectId";
 const ACTIVE_PROJECT_NAME_KEY = "activeProjectName";
 const PROJECT_CONTEXTS_KEY = "projectContexts";
+const CHAT_HISTORY_KEY_PREFIX = "chatHistory_";
+const MAX_STORED_MESSAGES = 50;
 const FILE_TREE_MIN_WIDTH = 180;
 const FILE_TREE_DEFAULT_WIDTH = 224;
 const FILE_TREE_MAX_WIDTH = 640;
+
+const getChatStorageKey = (projectId: string) =>
+  `${CHAT_HISTORY_KEY_PREFIX}${projectId}`;
 
 interface Message {
   id: string;
