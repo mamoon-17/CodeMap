@@ -415,12 +415,20 @@ def retrieve_similar_chunks(
                 }
             )
 
+    pre_filter_count = len(matches)
     if project_id:
         matches = [
             match
             for match in matches
             if (match.get("metadata") or {}).get("project_id") == project_id
         ]
+    if project_id and len(matches) != pre_filter_count:
+        logger.warning(
+            "cross_project_leakage detected project=%s pre_filter=%d post_filter=%d",
+            project_id,
+            pre_filter_count,
+            len(matches),
+        )
 
     matches = [m for m in matches if m["score"] >= RETRIEVAL_THRESHOLDS["MIN_RETURN_SCORE"]]
 
