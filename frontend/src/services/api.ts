@@ -1,6 +1,9 @@
 import type {
+  AddPublicRepoResponse,
+  ListPublicReposResponse,
   ProjectFileContentResponse,
   ProjectFilesResponse,
+  PublicRepoErrorKind,
   QueryRequest,
   QueryResponse,
   ReindexStartRequest,
@@ -8,8 +11,23 @@ import type {
   ReindexStatusResponse,
 } from "@/types/api";
 
+export class PublicRepoError extends Error {
+  status: number;
+  kind: PublicRepoErrorKind | "unknown";
+  constructor(
+    message: string,
+    status: number,
+    kind: PublicRepoErrorKind | "unknown" = "unknown",
+  ) {
+    super(message);
+    this.name = "PublicRepoError";
+    this.status = status;
+    this.kind = kind;
+  }
+}
+
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  "http://localhost:5000";
 
 export class ApiError extends Error {
   status: number;
@@ -161,6 +179,83 @@ export async function retryProjectIndex(projectId: string): Promise<{
     indexed: number;
     fileCount: number;
   };
+}
+
+export async function addPublicRepo(
+  token: string,
+  url: string,
+): Promise<AddPublicRepoResponse> {
+  const response = await fetch(`${API_BASE_URL}/projects/public-repos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ url }),
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new PublicRepoError(
+      payload.error || `HTTP ${response.status}: ${response.statusText}`,
+      response.status,
+      (payload.kind as PublicRepoErrorKind) || "unknown",
+    );
+  }
+
+  return payload as AddPublicRepoResponse;
+}
+
+export async function listPublicRepos(
+  token: string,
+): Promise<ListPublicReposResponse> {
+  const response = await fetch(`${API_BASE_URL}/projects/public-repos`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(
+      payload.error || `HTTP ${response.status}: ${response.statusText}`,
+    );
+  }
+
+  return payload as ListPublicReposResponse;
+}
+
+export async function deletePublicRepo(
+  token: string,
+  githubRepoId: string,
+): Promise<{ removed: boolean; warnings?: string[] }> {
+  const response = await fetch(
+    `${API_BASE_URL}/projects/public-repos/${encodeURIComponent(githubRepoId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(
+      payload.error || `HTTP ${response.status}: ${response.statusText}`,
+    );
+  }
+
+  return payload as { removed: boolean; warnings?: string[] };
 }
 
 export async function deleteAccount(

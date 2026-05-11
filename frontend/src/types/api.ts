@@ -84,5 +84,42 @@ export interface UserProfile {
 export interface ProjectContextItem {
   id: string;
   name: string;
-  source: "github" | "upload";
+  source: "github" | "upload" | "public";
 }
+
+export interface PublicRepoApiItem {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  private: boolean;
+  fork: boolean;
+  language: string | null;
+  size: number;
+  owner: { login: string; avatar_url: string };
+  updated_at: string;
+  pushed_at: string | null;
+  last_indexed_at: string | null;
+  has_changes: boolean;
+  needs_reindex: boolean;
+  source: "public";
+}
+
+export interface AddPublicRepoResponse {
+  repository: PublicRepoApiItem;
+}
+
+export interface ListPublicReposResponse {
+  repositories: PublicRepoApiItem[];
+  count: number;
+}
+
+export type PublicRepoErrorKind =
+  | "invalid_url"
+  | "not_found"
+  | "private"
+  | "empty"
+  | "too_large"
+  | "duplicate"
+  | "github_error"
+  | "internal";

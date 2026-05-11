@@ -8,13 +8,27 @@ import {
   X,
   Upload,
   Github,
+  Globe,
   RefreshCw,
   User,
   Settings,
   LogOut,
+  Trash2,
 } from "lucide-react";
-import type { ProjectContextItem, UserProfile } from "@/types/api";
-import { getReindexStatus, startReindex, retryProjectIndex } from "@/services/api";
+import type {
+  ProjectContextItem,
+  PublicRepoApiItem,
+  UserProfile,
+} from "@/types/api";
+import {
+  addPublicRepo,
+  deletePublicRepo,
+  getReindexStatus,
+  listPublicRepos,
+  PublicRepoError,
+  retryProjectIndex,
+  startReindex,
+} from "@/services/api";
 import { LogoHomeLink } from "@/components/LogoHomeLink";
 
 interface Repo {
@@ -28,8 +42,9 @@ interface Repo {
   files: number;
   language?: string;
   size?: number;
-  source: "github" | "upload";
+  source: "github" | "upload" | "public";
   lastError?: string;
+  githubRepoId?: string;
 }
 
 type ReindexUiState =
@@ -137,6 +152,11 @@ const Dashboard = () => {
   >({});
   const [retryingUploadId, setRetryingUploadId] = useState<string | null>(null);
   const [uploadRetryErrorById, setUploadRetryErrorById] = useState<Record<string, string>>({});
+  const [addingPublicRepo, setAddingPublicRepo] = useState(false);
+  const [publicRepoUrlError, setPublicRepoUrlError] = useState("");
+  const [removingPublicRepoId, setRemovingPublicRepoId] = useState<string | null>(
+    null,
+  );
   /** Set to the temp or project id while a ZIP is uploading / retry-indexing; drives phased status text. */
   const [zipIngestFeedbackId, setZipIngestFeedbackId] = useState<string | null>(
     null,
@@ -166,7 +186,7 @@ const Dashboard = () => {
   const setActiveProject = (
     projectId: string,
     projectName: string,
-    source: "github" | "upload",
+    source: "github" | "upload" | "public",
   ) => {
     if (import.meta.env.DEV && activeProjectId && activeProjectId !== projectId) {
       console.info("Project switched from", activeProjectId, "to", projectId);
@@ -197,6 +217,7 @@ const Dashboard = () => {
       if (!headers) {
         throw new Error("Please login to load repositories.");
       }
+      const token = localStorage.getItem("accessToken") || "";
 
       const profileResponse = await fetch(`${API_BASE_URL}/users/me`, {
         headers,
@@ -206,16 +227,27 @@ const Dashboard = () => {
         setCurrentUser(profilePayload.data as UserProfile);
       }
 
-      const response = await fetch(`${API_BASE_URL}/users/repos`, {
-        headers,
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to load repositories");
+      // GitHub-connected list is best-effort — users without a linked GitHub account
+      // should still see uploaded projects and public-repo links.
+      let githubRepos: GithubRepoResponse[] = [];
+      try {
+        const ghResponse = await fetch(`${API_BASE_URL}/users/repos`, { headers });
+        const ghPayload = await ghResponse.json().catch(() => ({}));
+        if (ghResponse.ok) {
+          githubRepos = (ghPayload.data?.repositories || []) as GithubRepoResponse[];
+        }
+      } catch {
+        // Network-level failure; ignored so the rest of the dashboard can still load.
       }
 
-      const githubRepos = (payload.data?.repositories || []) as GithubRepoResponse[];
+      let publicRepos: PublicRepoApiItem[] = [];
+      try {
+        const publicResult = await listPublicRepos(token);
+        publicRepos = publicResult.repositories;
+      } catch {
+        // Surface no error here; the dashboard still works without public repos.
+      }
+
       const projectsResponse = await fetch(`${API_BASE_URL}/projects`);
       const projectsPayload = await projectsResponse.json();
       if (!projectsResponse.ok) {
@@ -237,9 +269,29 @@ const Dashboard = () => {
         uploadProjectIds.has(project.id),
       );
 
-      setRepos(
-        [
-          ...githubRepos.map((repo) => ({
+      const githubIds = new Set(
+        githubRepos.map((repo) => `gh_${String(repo.id)}`),
+      );
+
+      setRepos([
+        ...githubRepos.map((repo) => ({
+          id: `gh_${String(repo.id)}`,
+          name: repo.full_name,
+          status: "available" as const,
+          lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
+          lastIndexedAt: repo.last_indexed_at,
+          hasChanges: repo.has_changes,
+          needsReindex: repo.needs_reindex,
+          files: 0,
+          language: repo.language || "Unknown",
+          size: repo.size,
+          source: "github" as const,
+          githubRepoId: String(repo.id),
+        })),
+        // Skip public-linked repos that are already returned by /users/repos — same `gh_<id>` key.
+        ...publicRepos
+          .filter((repo) => !githubIds.has(`gh_${String(repo.id)}`))
+          .map((repo) => ({
             id: `gh_${String(repo.id)}`,
             name: repo.full_name,
             status: "available" as const,
@@ -250,22 +302,22 @@ const Dashboard = () => {
             files: 0,
             language: repo.language || "Unknown",
             size: repo.size,
-            source: "github" as const,
+            source: "public" as const,
+            githubRepoId: String(repo.id),
           })),
-          ...visibleUploadedProjects.map((project) => ({
-            id: project.id,
-            name: project.name,
-            status: mapStatus(project.status),
-            lastUpdated: timeAgo(project.createdAt),
-            lastIndexedAt:
-              project.status === "ready" ? project.createdAt : null,
-            hasChanges: false,
-            needsReindex: false,
-            files: project.fileCount ?? 0,
-            source: "upload" as const,
-          })),
-        ],
-      );
+        ...visibleUploadedProjects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          status: mapStatus(project.status),
+          lastUpdated: timeAgo(project.createdAt),
+          lastIndexedAt:
+            project.status === "ready" ? project.createdAt : null,
+          hasChanges: false,
+          needsReindex: false,
+          files: project.fileCount ?? 0,
+          source: "upload" as const,
+        })),
+      ]);
     } catch (error) {
       setReposError(
         error instanceof Error ? error.message : "Failed to load repositories",
@@ -447,23 +499,65 @@ const Dashboard = () => {
       return;
     }
     if (!repoUrl.trim()) return;
-    const name = repoUrl.replace("https://github.com/", "").replace(".git", "");
-    setRepos((prev) => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        name: name || "new/repository",
-        status: "processing",
-        lastUpdated: "Just now",
-        lastIndexedAt: null,
-        hasChanges: false,
-        needsReindex: false,
+
+    const token = localStorage.getItem("accessToken") || "";
+    if (!token) {
+      setPublicRepoUrlError("Please login to add a public repository.");
+      return;
+    }
+
+    const normalized = repoUrl.trim().replace(/\.git$/i, "").toLowerCase();
+    const alreadyLinked = repos.some((repo) => {
+      if (!repo.id.startsWith("gh_")) return false;
+      return repo.name.toLowerCase() === normalized.replace(
+        /^https?:\/\/(www\.)?github\.com\//i,
+        "",
+      );
+    });
+    if (alreadyLinked) {
+      setPublicRepoUrlError(
+        "This repository is already linked. You can only add it once.",
+      );
+      return;
+    }
+
+    setAddingPublicRepo(true);
+    setPublicRepoUrlError("");
+
+    try {
+      const result = await addPublicRepo(token, repoUrl.trim());
+      const repo = result.repository;
+      const newRepo: Repo = {
+        id: `gh_${String(repo.id)}`,
+        name: repo.full_name,
+        status: "available",
+        lastUpdated: timeAgo(repo.pushed_at || repo.updated_at),
+        lastIndexedAt: repo.last_indexed_at,
+        hasChanges: repo.has_changes,
+        needsReindex: repo.needs_reindex,
         files: 0,
-        source: "github",
-      },
-    ]);
-    setRepoUrl("");
-    setShowAddModal(false);
+        language: repo.language || "Unknown",
+        size: repo.size,
+        source: "public",
+        githubRepoId: String(repo.id),
+      };
+      setRepos((prev) => {
+        const filtered = prev.filter((r) => r.id !== newRepo.id);
+        return [newRepo, ...filtered];
+      });
+      setRepoUrl("");
+      setShowAddModal(false);
+    } catch (error) {
+      const message =
+        error instanceof PublicRepoError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Failed to add repository.";
+      setPublicRepoUrlError(message);
+    } finally {
+      setAddingPublicRepo(false);
+    }
   };
 
   const handleConnectRepo = (repoId: string) => {
@@ -472,6 +566,39 @@ const Dashboard = () => {
 
     setActiveProject(selectedRepo.id, selectedRepo.name, selectedRepo.source);
     navigate("/query");
+  };
+
+  const handleRemovePublicRepo = async (repo: Repo) => {
+    if (!repo.githubRepoId) return;
+    const token = localStorage.getItem("accessToken") || "";
+    if (!token) {
+      setReposError("Please login to remove a repository.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove ${repo.name}? Its indexed data will be cleared.`,
+    );
+    if (!confirmed) return;
+
+    setRemovingPublicRepoId(repo.id);
+    try {
+      await deletePublicRepo(token, repo.githubRepoId);
+      setRepos((prev) => prev.filter((r) => r.id !== repo.id));
+      if (activeProjectId === repo.id) {
+        setActiveProjectId("");
+        setActiveProjectName("");
+        localStorage.removeItem(ACTIVE_PROJECT_ID_KEY);
+        localStorage.removeItem(ACTIVE_PROJECT_NAME_KEY);
+        clearProjectChatHistory(repo.id);
+      }
+    } catch (error) {
+      setReposError(
+        error instanceof Error ? error.message : "Failed to remove repository.",
+      );
+    } finally {
+      setRemovingPublicRepoId(null);
+    }
   };
 
   const handleRetryUploadIndex = async (projectId: string) => {
@@ -739,6 +866,11 @@ const Dashboard = () => {
                         <X size={12} />
                         Index failed
                       </span>
+                      ) : repo.source === "public" ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Globe size={12} />
+                          Public URL
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <Github size={12} />
@@ -775,6 +907,22 @@ const Dashboard = () => {
                       </p>
                     )}
                   </div>
+                  {repo.source === "public" && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePublicRepo(repo)}
+                      disabled={removingPublicRepoId === repo.id}
+                      title="Remove public repository"
+                      aria-label="Remove public repository"
+                      className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive disabled:opacity-60"
+                    >
+                      {removingPublicRepoId === repo.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                    </button>
+                  )}
                 </div>
                 {repo.status === "processing" &&
                   repo.source === "upload" &&
@@ -840,7 +988,7 @@ const Dashboard = () => {
                 )}
                 {repo.status === "available" && (
                   <div className="mt-4">
-                    {repo.source === "github" && (
+                    {(repo.source === "github" || repo.source === "public") && (
                       <button
                         onClick={() => handleReindexFullRepo(repo.id)}
                         disabled={reindexingRepoId === repo.id}
@@ -863,7 +1011,7 @@ const Dashboard = () => {
                       </button>
                     )}
 
-                    {repo.source === "github" &&
+                    {(repo.source === "github" || repo.source === "public") &&
                       reindexUi?.status === "running" && (
                         <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <div className="flex items-center gap-2">
@@ -882,7 +1030,7 @@ const Dashboard = () => {
                         </div>
                       )}
 
-                    {repo.source === "github" &&
+                    {(repo.source === "github" || repo.source === "public") &&
                       reindexUi?.status === "completed" && (
                         <div className="mb-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <div className="flex items-center justify-between gap-2">
@@ -926,7 +1074,7 @@ const Dashboard = () => {
                         </div>
                       )}
 
-                    {repo.source === "github" &&
+                    {(repo.source === "github" || repo.source === "public") &&
                       reindexUi?.status === "failed" && (
                         <div className="mb-2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive">
                           Re-index failed:{" "}
@@ -991,11 +1139,19 @@ const Dashboard = () => {
                   <input
                     type="text"
                     value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      if (publicRepoUrlError) setPublicRepoUrlError("");
+                    }}
                     placeholder="https://github.com/owner/repo"
                     className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
+                {publicRepoUrlError && (
+                  <p className="mt-2 text-xs text-destructive">
+                    {publicRepoUrlError}
+                  </p>
+                )}
               </div>
 
               <div className="relative flex items-center gap-3">
@@ -1037,12 +1193,14 @@ const Dashboard = () => {
 
               <button
                 onClick={handleAddRepo}
-                disabled={uploadStatus === "uploading"}
+                disabled={uploadStatus === "uploading" || addingPublicRepo}
                 className="w-full rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
                 {uploadStatus === "uploading"
                   ? "Uploading..."
-                  : "Add Repository"}
+                  : addingPublicRepo
+                    ? "Linking repository..."
+                    : "Add Repository"}
               </button>
             </div>
           </div>

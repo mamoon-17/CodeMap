@@ -1,6 +1,28 @@
 import { Request, Response } from "express";
 import { projectService } from "./project.service";
+import { publicRepoService, type AddPublicRepoError } from "./public-repo.service";
 import { queryService } from "../query/query.service";
+
+function httpStatusForPublicRepoError(error: AddPublicRepoError): number {
+  switch (error.kind) {
+    case "invalid_url":
+      return 400;
+    case "not_found":
+      return 404;
+    case "private":
+      return 403;
+    case "empty":
+    case "too_large":
+      return 422;
+    case "duplicate":
+      return 409;
+    case "github_error":
+      return 502;
+    case "internal":
+    default:
+      return 500;
+  }
+}
 
 class ProjectController {
   async listAll(_req: Request, res: Response) {
@@ -116,6 +138,81 @@ class ProjectController {
     }
 
     res.status(200).json({ deleted: result.value.deleted });
+  }
+
+  async addPublicRepo(req: Request, res: Response) {
+    if (!req.user?.id) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+
+    const rawUrl = (req.body?.url as unknown) ?? "";
+    if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+      res.status(400).json({ error: "Repository URL is required." });
+      return;
+    }
+
+    const result = await publicRepoService.addPublicRepo(req.user.id, rawUrl);
+    if (result.isErr()) {
+      res
+        .status(httpStatusForPublicRepoError(result.error))
+        .json({ error: result.error.message, kind: result.error.kind });
+      return;
+    }
+
+    res.status(201).json({ repository: result.value });
+  }
+
+  async listPublicRepos(req: Request, res: Response) {
+    if (!req.user?.id) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+
+    const result = await publicRepoService.listPublicRepos(req.user.id);
+    if (result.isErr()) {
+      res.status(500).json({ error: result.error });
+      return;
+    }
+
+    res.status(200).json({
+      repositories: result.value,
+      count: result.value.length,
+    });
+  }
+
+  async removePublicRepo(req: Request, res: Response) {
+    if (!req.user?.id) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+
+    const rawId = req.params.githubRepoId;
+    const githubRepoId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!githubRepoId) {
+      res.status(400).json({ error: "Missing githubRepoId" });
+      return;
+    }
+
+    const removeLink = await publicRepoService.removePublicRepo(
+      req.user.id,
+      githubRepoId,
+    );
+    if (removeLink.isErr()) {
+      res.status(500).json({ error: removeLink.error });
+      return;
+    }
+
+    // Best-effort: clean vectors for the repo so a "removed" repo really disappears.
+    const vectorsResult = await queryService.deleteProjectVectors(
+      `gh_${githubRepoId}`,
+    );
+    const warnings = vectorsResult.isErr() ? [vectorsResult.error] : [];
+
+    res.status(200).json({
+      removed: removeLink.value.removed,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    });
   }
 }
 

@@ -6,6 +6,7 @@ import { Result, err, ok } from "neverthrow";
 import { AppDataSource } from "../../config/datasource";
 import { User } from "../user/user.entity";
 import { RepositoryRecord } from "../project/repository.entity";
+import { publicRepoService } from "../project/public-repo.service";
 import { queryService } from "../query/query.service";
 import {
   ReindexJob,
@@ -280,19 +281,6 @@ export class ReindexService {
     };
 
     const user = await userRepo.findOne({ where: { id: job.userId } });
-    if (!user?.githubAccessToken) {
-      await log("error", "GitHub not connected", "failed");
-      await jobRepo.update(
-        { id: jobId },
-        {
-          status: ReindexJobStatus.FAILED,
-          error: "GitHub not connected",
-        },
-      );
-      return;
-    }
-
-    await log("info", "Resolved user token", "auth_ok");
 
     const record = await repoRecordRepo.findOne({
       where: { githubRepoId: job.githubRepoId },
@@ -309,6 +297,30 @@ export class ReindexService {
       return;
     }
 
+    const isPublicLinkedRepo =
+      !record.isPrivate &&
+      (await publicRepoService.hasLink(job.userId, job.githubRepoId));
+
+    if (!user?.githubAccessToken && !isPublicLinkedRepo) {
+      await log("error", "GitHub not connected", "failed");
+      await jobRepo.update(
+        { id: jobId },
+        {
+          status: ReindexJobStatus.FAILED,
+          error: "GitHub not connected",
+        },
+      );
+      return;
+    }
+
+    await log(
+      "info",
+      user?.githubAccessToken
+        ? "Resolved user token"
+        : "Using unauthenticated public-repo access",
+      "auth_ok",
+    );
+
     await log("info", `Downloading zipball for ${record.fullName}`, "download_zipball");
 
     const tmpBase = await fs.promises.mkdtemp(
@@ -318,17 +330,17 @@ export class ReindexService {
     const extractPath = path.join(tmpBase, "repo");
 
     try {
-      // Download repo zipball
       const zipballUrl = `https://api.github.com/repos/${record.fullName}/zipball`;
+      const zipballHeaders: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "CodeMap",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+      if (user?.githubAccessToken) {
+        zipballHeaders.Authorization = `Bearer ${user.githubAccessToken}`;
+      }
       const response = await withRetry("download zipball", async () => {
-        const res = await fetch(zipballUrl, {
-          headers: {
-            Accept: "application/vnd.github+json",
-            Authorization: `Bearer ${user.githubAccessToken}`,
-            "User-Agent": "CodeMap",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
-        });
+        const res = await fetch(zipballUrl, { headers: zipballHeaders });
         if (!res.ok) {
           const body = await res.text().catch(() => "");
           throw new Error(

@@ -3,6 +3,7 @@ import { User } from "./user.entity";
 import { AppDataSource } from "../../config/datasource";
 import { Result, ok, err } from "neverthrow";
 import { RepositoryRecord } from "../project/repository.entity";
+import { PublicRepoLink } from "../project/public-repo-link.entity";
 import { Project } from "../project/project.entity";
 import { ReindexJob } from "../reindex/reindex.entity";
 import { queryService } from "../query/query.service";
@@ -319,6 +320,16 @@ class UserService {
       }
 
       await reindexJobRepo.delete({ userId });
+
+      try {
+        await AppDataSource.getRepository(PublicRepoLink).delete({ userId });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[accountDelete] Failed to delete public-repo links for user ${userId}: ${message}`,
+        );
+        warnings.push(`Failed to delete public-repo links: ${message}`);
+      }
 
       const deleteResult = await userRepo.delete({ id: userId });
       if (!deleteResult.affected) {

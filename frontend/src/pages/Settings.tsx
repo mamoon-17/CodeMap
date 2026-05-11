@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { deleteAccount } from "@/services/api";
+import { applyTheme, readTheme, type ThemeOption } from "@/lib/theme";
 
 const SETTINGS_KEYS = {
   pushNotifications: "settings.pushNotifications",
@@ -10,20 +11,10 @@ const SETTINGS_KEYS = {
   saveHistory: "settings.saveHistory",
 };
 
-type ThemeOption = "light" | "dark" | "system";
-
 const readBool = (key: string, fallback: boolean) => {
   const raw = localStorage.getItem(key);
   if (raw === null) return fallback;
   return raw === "true";
-};
-
-const readTheme = (): ThemeOption => {
-  const raw = localStorage.getItem(SETTINGS_KEYS.theme);
-  if (raw === "light" || raw === "dark" || raw === "system") {
-    return raw;
-  }
-  return "system";
 };
 
 const Toggle = ({
@@ -89,6 +80,7 @@ const Settings = () => {
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEYS.theme, theme);
+    applyTheme(theme);
   }, [theme]);
 
   const handleClearHistory = () => {

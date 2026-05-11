@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
 import { projectController } from "./project.controller";
+import { authMiddleware } from "../../middleware/auth.middleware";
 
 const MAX_RAW_ZIP_UPLOAD_BYTES = 250 * 1024 * 1024;
 const ZIP_TOO_LARGE_MESSAGE =
@@ -32,6 +33,26 @@ router.get("/", (req, res) => projectController.listAll(req, res));
 
 router.post("/upload", uploadSingleZip, (req, res) =>
   projectController.uploadRepo(req, res),
+);
+
+router.post(
+  "/public-repos",
+  (req, res, next) => authMiddleware.requireAuth(req, res, next),
+  (req, res, next) => authMiddleware.requireNonGuest(req, res, next),
+  (req, res) => projectController.addPublicRepo(req, res),
+);
+
+router.get(
+  "/public-repos",
+  (req, res, next) => authMiddleware.requireAuth(req, res, next),
+  (req, res) => projectController.listPublicRepos(req, res),
+);
+
+router.delete(
+  "/public-repos/:githubRepoId",
+  (req, res, next) => authMiddleware.requireAuth(req, res, next),
+  (req, res, next) => authMiddleware.requireNonGuest(req, res, next),
+  (req, res) => projectController.removePublicRepo(req, res),
 );
 
 router.post("/:id/retry", (req, res) => projectController.retry(req, res));
