@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path from "path";
+import fs from "fs";
 import userRoutes from "./modules/user/user.routes";
 import authRoutes from "./modules/auth/auth.routes";
 import queryRoutes from "./modules/query/query.routes";
@@ -14,6 +16,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:3000",
+  "https://code-map-coral.vercel.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean) as string[];
 
@@ -37,6 +40,18 @@ app.use("/auth", authRoutes);
 app.use("/query", queryRoutes);
 app.use("/projects", projectRoutes);
 app.use("/reindex", reindexRoutes);
+
+// Serve built React frontend in production (Docker monolith).
+// The frontend dist is copied to /app/frontend/dist by the Dockerfile.
+// In local dev this folder doesn't exist, so the block is skipped entirely.
+const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  // SPA fallback — let React Router handle all non-API routes
+  app.get("*", (_req: Request, res: Response) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
 
 // Error-handling middleware, this is where next(error) lands
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
