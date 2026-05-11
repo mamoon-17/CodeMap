@@ -10,7 +10,18 @@ import crypto from "crypto";
 
 type OAuthIntent = "login" | "signup" | "connect";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export class AuthController {
+  private oauthCookieOptions() {
+    return {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: isProduction,
+      maxAge: 10 * 60 * 1000,
+    };
+  }
+
   private resolveOAuthIntent(value: unknown): OAuthIntent {
     if (value === "signup") {
       return "signup";
@@ -115,16 +126,9 @@ export class AuthController {
 
     const state = crypto.randomUUID();
     const intent = this.resolveOAuthIntent(req.query.mode);
-    res.cookie("google_oauth_state", state, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
-    res.cookie("google_oauth_intent", intent, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
+    const cookieOpts = this.oauthCookieOptions();
+    res.cookie("google_oauth_state", state, cookieOpts);
+    res.cookie("google_oauth_intent", intent, cookieOpts);
 
     const callbackUrl = this.buildCallbackUrl(req, "google");
     const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -158,21 +162,10 @@ export class AuthController {
     }
 
     const state = crypto.randomUUID();
-    res.cookie("github_oauth_state", state, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
-    res.cookie("github_oauth_intent", "connect", {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
-    res.cookie("github_oauth_user_id", req.user.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
+    const cookieOpts = this.oauthCookieOptions();
+    res.cookie("github_oauth_state", state, cookieOpts);
+    res.cookie("github_oauth_intent", "connect", cookieOpts);
+    res.cookie("github_oauth_user_id", req.user.id, cookieOpts);
 
     const callbackUrl = this.buildCallbackUrl(req, "github");
     const redirectUrl = this.buildGithubAuthUrl(clientId, callbackUrl, state);
@@ -318,16 +311,9 @@ export class AuthController {
 
     const state = crypto.randomUUID();
     const intent = this.resolveOAuthIntent(req.query.mode);
-    res.cookie("github_oauth_state", state, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
-    res.cookie("github_oauth_intent", intent, {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000,
-    });
+    const cookieOpts = this.oauthCookieOptions();
+    res.cookie("github_oauth_state", state, cookieOpts);
+    res.cookie("github_oauth_intent", intent, cookieOpts);
 
     const callbackUrl = this.buildCallbackUrl(req, "github");
     const redirectUrl = this.buildGithubAuthUrl(clientId, callbackUrl, state);
