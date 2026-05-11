@@ -1,5 +1,6 @@
 import AdmZip from "adm-zip";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { Result, err, ok } from "neverthrow";
 import { AppDataSource } from "../../config/datasource";
@@ -11,6 +12,7 @@ import {
 } from "../../integrations/supabase/supabaseClient";
 import { Project, ProjectStatus } from "./project.entity";
 import { RepositoryRecord } from "./repository.entity";
+import { UserRepositoryLink } from "./linked-repository.entity";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".js",
@@ -111,10 +113,34 @@ function isZipFile(zipPath: string): boolean {
   }
 }
 
-function buildIngestPayloadFromZip(zip: AdmZip): {
+function getZipRootPrefix(zip: AdmZip): string | null {
+  const roots = new Set<string>();
+
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const entryName = entry.entryName;
+    if (isUnsafeZipEntryPath(entryName)) continue;
+
+    const normalized = normalizeZipEntryPath(entryName);
+    const firstSegment = normalized.split("/").filter(Boolean)[0];
+    if (!firstSegment) continue;
+    roots.add(firstSegment);
+    if (roots.size > 1) return null;
+  }
+
+  if (roots.size !== 1) return null;
+  return Array.from(roots)[0] || null;
+}
+
+function buildIngestPayloadFromZip(
+  zip: AdmZip,
+  options: { stripRootDir?: boolean } = {},
+): {
   files: Array<{ file_path: string; content: string }>;
   filePaths: string[];
 } {
+  const stripRootDir = options.stripRootDir ?? false;
+  const rootPrefix = stripRootDir ? getZipRootPrefix(zip) : null;
   const files: Array<{ file_path: string; content: string }> = [];
   const filePaths: string[] = [];
 
@@ -126,7 +152,11 @@ function buildIngestPayloadFromZip(zip: AdmZip): {
       throw new Error("Invalid entry path in ZIP file");
     }
 
-    const normalized = normalizeZipEntryPath(entryName);
+    let normalized = normalizeZipEntryPath(entryName);
+    if (rootPrefix && normalized.startsWith(`${rootPrefix}/`)) {
+      normalized = normalized.slice(rootPrefix.length + 1);
+    }
+    if (!normalized) continue;
     if (shouldIgnorePath(normalized)) continue;
     const ext = path.posix.extname(normalized).toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
@@ -141,6 +171,87 @@ function buildIngestPayloadFromZip(zip: AdmZip): {
   }
 
   return { files, filePaths };
+}
+
+function parseGithubRepoUrl(input: string): { owner: string; repo: string } | null {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+
+  const gitSshMatch = raw.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/);
+  if (gitSshMatch && gitSshMatch[1] && gitSshMatch[2]) {
+    return { owner: gitSshMatch[1], repo: gitSshMatch[2] };
+  }
+
+  const normalized = raw.startsWith("http") ? raw : `https://${raw}`;
+  try {
+    const url = new URL(normalized);
+    if (url.hostname !== "github.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    const owner = parts[0];
+    const repoPart = parts[1];
+    if (!owner || !repoPart) return null;
+    const repo = repoPart.replace(/\.git$/, "");
+    if (!repo) return null;
+    return { owner, repo };
+  } catch {
+    return null;
+  }
+}
+
+interface GithubRepoMetadata {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  private: boolean;
+  fork: boolean;
+  language: string | null;
+  size: number;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+  updated_at: string;
+  pushed_at: string | null;
+}
+
+function hasRepoChanged(githubUpdatedAt: Date | null, lastIndexedAt: Date | null): boolean {
+  if (!githubUpdatedAt || !lastIndexedAt) return false;
+  return githubUpdatedAt.getTime() > lastIndexedAt.getTime();
+}
+
+async function fetchPublicGithubRepo(
+  owner: string,
+  repo: string,
+): Promise<GithubRepoMetadata> {
+  const url = `https://api.github.com/repos/${owner}/${repo}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "CodeMap",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+
+  if (response.status === 404) {
+    throw new Error("Repository not found or not public");
+  }
+
+  const rateLimited =
+    response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0";
+  if (rateLimited) {
+    throw new Error("GitHub rate limit exceeded. Please try again later.");
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `GitHub API error ${response.status}: ${body || response.statusText}`,
+    );
+  }
+
+  return (await response.json()) as GithubRepoMetadata;
 }
 
 class ProjectService {
@@ -263,6 +374,213 @@ class ProjectService {
         // Ignore errors during cleanup
       }
     }
+  }
+
+  async createFromPublicRepoUrl(
+    userId: string,
+    repoUrl: string,
+  ): Promise<
+    Result<
+      {
+        projectId: string;
+        repository: RepositoryRecord;
+        status: ProjectStatus;
+        fileCount: number;
+        indexingError?: string;
+      },
+      string
+    >
+  > {
+    if (!userId) {
+      return err("Authentication required");
+    }
+
+    const parsed = parseGithubRepoUrl(repoUrl);
+    if (!parsed) {
+      return err("Invalid GitHub repository URL");
+    }
+
+    const { owner, repo } = parsed;
+    let metadata: GithubRepoMetadata;
+
+    try {
+      metadata = await fetchPublicGithubRepo(owner, repo);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err(message);
+    }
+
+    if (metadata.private) {
+      return err("Repository is private. Please provide a public repository.");
+    }
+
+    const repoRecordRepo = AppDataSource.getRepository(RepositoryRecord);
+    const linkRepo = AppDataSource.getRepository(UserRepositoryLink);
+    const githubRepoId = String(metadata.id);
+    const existing = await repoRecordRepo.findOne({
+      where: { githubRepoId },
+    });
+    const existingLink = await linkRepo.findOne({
+      where: { userId, githubRepoId },
+    });
+
+    if (existingLink) {
+      return err("Repository already linked");
+    }
+
+    const githubUpdatedAt = metadata.pushed_at
+      ? new Date(metadata.pushed_at)
+      : metadata.updated_at
+        ? new Date(metadata.updated_at)
+        : null;
+    const existingLastIndexedAt = existing?.lastIndexedAt || null;
+    const computedNeedsReindex =
+      hasRepoChanged(githubUpdatedAt, existingLastIndexedAt) ||
+      Boolean(existing?.needsReindex);
+
+    await repoRecordRepo.upsert(
+      [
+        {
+          ...(existing?.id ? { id: existing.id } : {}),
+          githubRepoId,
+          name: metadata.name,
+          fullName: metadata.full_name,
+          url: metadata.html_url,
+          language: metadata.language,
+          size: metadata.size,
+          isPrivate: metadata.private,
+          isFork: metadata.fork,
+          ownerLogin: metadata.owner.login,
+          ownerAvatarUrl: metadata.owner.avatar_url || null,
+          githubUpdatedAt: metadata.updated_at ? new Date(metadata.updated_at) : null,
+          githubPushedAt: metadata.pushed_at ? new Date(metadata.pushed_at) : null,
+          lastIndexedAt: existing?.lastIndexedAt || null,
+          needsReindex: computedNeedsReindex,
+        },
+      ],
+      ["githubRepoId"],
+    );
+
+    const record = await repoRecordRepo.findOne({ where: { githubRepoId } });
+    if (!record) {
+      return err("Failed to persist repository metadata");
+    }
+
+    const projectId = `gh_${githubRepoId}`;
+
+    try {
+      await linkRepo.save(
+        linkRepo.create({
+          userId,
+          githubRepoId,
+        }),
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (message.toLowerCase().includes("duplicate")) {
+        return err("Repository already linked");
+      }
+      return err(`Failed to link repository: ${message}`);
+    }
+
+    if (record.lastIndexedAt && !record.needsReindex) {
+      return ok({
+        projectId,
+        repository: record,
+        status: ProjectStatus.READY,
+        fileCount: 0,
+      });
+    }
+    const tmpBase = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "codemap-public-"),
+    );
+    const zipPath = path.join(tmpBase, "repo.zip");
+
+    let status: ProjectStatus = ProjectStatus.READY;
+    let fileCount = 0;
+    let indexingError: string | undefined;
+
+    try {
+      const zipballUrl = `https://api.github.com/repos/${metadata.full_name}/zipball`;
+      const response = await fetch(zipballUrl, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "User-Agent": "CodeMap",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `GitHub zipball failed (${response.status}): ${body || response.statusText}`,
+        );
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      await fs.promises.writeFile(zipPath, Buffer.from(arrayBuffer));
+
+      const zip = new AdmZip(zipPath);
+      // Force parsing to catch corrupt archives early
+      zip.getEntries();
+
+      const { files, filePaths } = buildIngestPayloadFromZip(zip, {
+        stripRootDir: true,
+      });
+      if (files.length === 0) {
+        throw new Error(
+          "No supported source files found (allowed: .js, .ts, .py, .java, .cpp, .c, .cs, .go, .rb, .php, .swift, .kt, .rs, .html, .css, .json, .xml, .yaml, .yml)",
+        );
+      }
+
+      const ingestResult = await queryService.ingestFiles({
+        project_id: projectId,
+        files,
+        replace_project: true,
+      });
+
+      if (ingestResult.isErr()) {
+        throw new Error(ingestResult.error);
+      }
+
+      fileCount = filePaths.length;
+      await repoRecordRepo.update(
+        { githubRepoId },
+        { lastIndexedAt: new Date(), needsReindex: false },
+      );
+      record.lastIndexedAt = new Date();
+      record.needsReindex = false;
+    } catch (e) {
+      status = ProjectStatus.FAILED;
+      indexingError = e instanceof Error ? e.message : String(e);
+      await repoRecordRepo.update(
+        { githubRepoId },
+        { needsReindex: true },
+      );
+      record.needsReindex = true;
+    } finally {
+      try {
+        await fs.promises.rm(tmpBase, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
+    const latestGithubUpdatedAt =
+      record.githubPushedAt || record.githubUpdatedAt || null;
+    const hasChanges = hasRepoChanged(
+      latestGithubUpdatedAt,
+      record.lastIndexedAt || null,
+    );
+    record.needsReindex = record.needsReindex || hasChanges;
+
+    return ok({
+      projectId,
+      repository: record,
+      status,
+      fileCount,
+      ...(indexingError ? { indexingError } : {}),
+    });
   }
 
   async retryIngest(

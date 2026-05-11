@@ -3,6 +3,7 @@ import { User } from "./user.entity";
 import { AppDataSource } from "../../config/datasource";
 import { Result, ok, err } from "neverthrow";
 import { RepositoryRecord } from "../project/repository.entity";
+import { UserRepositoryLink } from "../project/linked-repository.entity";
 import { Project } from "../project/project.entity";
 import { ReindexJob } from "../reindex/reindex.entity";
 import { queryService } from "../query/query.service";
@@ -75,6 +76,31 @@ class UserService {
 
   private getRepositoryRecordRepo(): Repository<RepositoryRecord> {
     return AppDataSource.getRepository(RepositoryRecord);
+  }
+
+  private getUserRepositoryLinkRepo(): Repository<UserRepositoryLink> {
+    return AppDataSource.getRepository(UserRepositoryLink);
+  }
+
+  private repoRecordToGithubRepo(record: RepositoryRecord): GithubRepository {
+    return {
+      id: Number(record.githubRepoId),
+      name: record.name,
+      full_name: record.fullName,
+      html_url: record.url,
+      private: record.isPrivate,
+      fork: record.isFork,
+      language: record.language,
+      size: record.size,
+      owner: {
+        login: record.ownerLogin,
+        avatar_url: record.ownerAvatarUrl || "",
+      },
+      updated_at: (record.githubUpdatedAt || record.updatedAt).toISOString(),
+      pushed_at: record.githubPushedAt
+        ? record.githubPushedAt.toISOString()
+        : null,
+    };
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -348,44 +374,51 @@ class UserService {
         return err("User not found");
       }
 
-      if (!user.githubAccessToken) {
-        return err(
-          "GitHub account not connected. Please authenticate with GitHub.",
-        );
-      }
-
       const includeForks = options.includeForks ?? false;
       const includeEmpty = options.includeEmpty ?? false;
 
       const collected: GithubRepository[] = [];
-      let nextPageUrl: string | null =
-        "https://api.github.com/user/repos?per_page=100&page=1&sort=updated";
+      if (user.githubAccessToken) {
+        let nextPageUrl: string | null =
+          "https://api.github.com/user/repos?per_page=100&page=1&sort=updated";
 
-      while (nextPageUrl) {
-        const response = await this.fetchGithubWithRetry(
-          nextPageUrl,
-          user.githubAccessToken,
-        );
+        while (nextPageUrl) {
+          const response = await this.fetchGithubWithRetry(
+            nextPageUrl,
+            user.githubAccessToken,
+          );
 
-        const pageRepos = (await response.json()) as GithubApiRepository[];
-        const filtered = pageRepos.filter((ghRepo) => {
-          if (!includeForks && ghRepo.fork) return false;
-          if (!includeEmpty && ghRepo.size === 0) return false;
-          return true;
-        });
+          const pageRepos = (await response.json()) as GithubApiRepository[];
+          const filtered = pageRepos.filter((ghRepo) => {
+            if (!includeForks && ghRepo.fork) return false;
+            if (!includeEmpty && ghRepo.size === 0) return false;
+            return true;
+          });
 
-        collected.push(...filtered);
-        nextPageUrl = this.getNextPageUrl(response.headers.get("link"));
+          collected.push(...filtered);
+          nextPageUrl = this.getNextPageUrl(response.headers.get("link"));
+        }
+
+        await this.syncGithubRepositories(collected);
       }
 
-      await this.syncGithubRepositories(collected);
+      const linkRepo = this.getUserRepositoryLinkRepo();
+      const links = await linkRepo.find({ where: { userId } });
+      const linkedIds = links.map((link) => link.githubRepoId);
+
+      const githubRepoIds = new Set<string>([
+        ...collected.map((repoItem) => String(repoItem.id)),
+        ...linkedIds,
+      ]);
+
+      if (githubRepoIds.size === 0) {
+        return ok([]);
+      }
 
       const repositoryRecordRepo = this.getRepositoryRecordRepo();
-      const githubRepoIds = collected.map((repoItem) => String(repoItem.id));
-
       const storedRecords = await repositoryRecordRepo.find({
         where: {
-          githubRepoId: In(githubRepoIds),
+          githubRepoId: In(Array.from(githubRepoIds)),
         },
       });
 
@@ -393,21 +426,41 @@ class UserService {
         storedRecords.map((record) => [record.githubRepoId, record]),
       );
 
-      const repositoriesWithState = collected.map((repoItem) => {
-        const stored = storedByGithubId.get(String(repoItem.id));
+      const repositoriesById = new Map<string, GithubRepositoryWithSyncState>();
+
+      for (const repoItem of collected) {
+        const repoId = String(repoItem.id);
+        const stored = storedByGithubId.get(repoId);
         const githubUpdatedAt = this.getRepoChangeTimestamp(repoItem);
         const lastIndexedAt = stored?.lastIndexedAt || null;
         const hasChanges = this.hasRepoChanged(githubUpdatedAt, lastIndexedAt);
 
-        return {
+        repositoriesById.set(repoId, {
           ...repoItem,
           last_indexed_at: lastIndexedAt ? lastIndexedAt.toISOString() : null,
           has_changes: hasChanges,
           needs_reindex: hasChanges || Boolean(stored?.needsReindex),
-        };
-      });
+        });
+      }
 
-      return ok(repositoriesWithState);
+      for (const linkedId of linkedIds) {
+        if (repositoriesById.has(linkedId)) continue;
+        const stored = storedByGithubId.get(linkedId);
+        if (!stored) continue;
+        const repoItem = this.repoRecordToGithubRepo(stored);
+        const githubUpdatedAt = this.getRepoChangeTimestamp(repoItem);
+        const lastIndexedAt = stored.lastIndexedAt || null;
+        const hasChanges = this.hasRepoChanged(githubUpdatedAt, lastIndexedAt);
+
+        repositoriesById.set(linkedId, {
+          ...repoItem,
+          last_indexed_at: lastIndexedAt ? lastIndexedAt.toISOString() : null,
+          has_changes: hasChanges,
+          needs_reindex: hasChanges || Boolean(stored.needsReindex),
+        });
+      }
+
+      return ok(Array.from(repositoriesById.values()));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err(`Failed to fetch GitHub repositories: ${message}`);

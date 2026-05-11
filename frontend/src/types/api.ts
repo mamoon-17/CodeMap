@@ -55,6 +55,30 @@ export interface ReindexStatusResponse {
   error?: string;
 }
 
+export interface PublicRepoRecord {
+  id: number;
+  full_name: string;
+  language: string | null;
+  size: number;
+  updated_at: string | null;
+  pushed_at: string | null;
+  last_indexed_at: string | null;
+  has_changes: boolean;
+  needs_reindex: boolean;
+}
+
+export interface PublicRepoAddResponse {
+  success: boolean;
+  data?: {
+    project_id: string;
+    status: "ready" | "failed" | "indexing";
+    file_count: number;
+    repository: PublicRepoRecord;
+    error?: string;
+  };
+  error?: string;
+}
+
 export interface Source {
   file: string;
   chunk_index: number;

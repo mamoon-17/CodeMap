@@ -1,6 +1,7 @@
 import type {
   IngestRequest,
   IngestResponse,
+  PublicRepoAddResponse,
   QueryRequest,
   QueryResponse,
   ReindexStartRequest,
@@ -127,6 +128,30 @@ export async function retryProjectIndex(projectId: string): Promise<{
     indexed: number;
     fileCount: number;
   };
+}
+
+export async function addPublicRepo(
+  token: string,
+  repoUrl: string,
+): Promise<PublicRepoAddResponse> {
+  const response = await fetch(`${API_BASE_URL}/projects/public`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ repo_url: repoUrl }),
+  });
+
+  const payload = await response
+    .json()
+    .catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload as PublicRepoAddResponse;
 }
 
 export async function deleteAccount(

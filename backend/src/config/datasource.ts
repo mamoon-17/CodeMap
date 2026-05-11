@@ -2,6 +2,7 @@ import { DataSource } from "typeorm";
 import { User } from "../modules/user/user.entity";
 import { Project } from "../modules/project/project.entity";
 import { RepositoryRecord } from "../modules/project/repository.entity";
+import { UserRepositoryLink } from "../modules/project/linked-repository.entity";
 import { ReindexJob } from "../modules/reindex/reindex.entity";
 import { config } from "./config";
 import { err, ok, Result } from "neverthrow";
@@ -17,7 +18,7 @@ export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.SUPABASE_URI || config.getSupabaseUri(),
   ssl,
-  entities: [User, Project, RepositoryRecord, ReindexJob],
+  entities: [User, Project, RepositoryRecord, UserRepositoryLink, ReindexJob],
   synchronize: true,
   dropSchema: false,
   logging: false,

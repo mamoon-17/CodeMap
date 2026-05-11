@@ -14,7 +14,12 @@ import {
   LogOut,
 } from "lucide-react";
 import type { ProjectContextItem, UserProfile } from "@/types/api";
-import { getReindexStatus, startReindex, retryProjectIndex } from "@/services/api";
+import {
+  addPublicRepo,
+  getReindexStatus,
+  startReindex,
+  retryProjectIndex,
+} from "@/services/api";
 
 interface Repo {
   id: string;
@@ -100,6 +105,10 @@ const Dashboard = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
+  const [repoUrlStatus, setRepoUrlStatus] = useState<"idle" | "loading" | "error">(
+    "idle",
+  );
+  const [repoUrlError, setRepoUrlError] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<
@@ -371,11 +380,23 @@ const Dashboard = () => {
       return;
     }
     if (!repoUrl.trim()) return;
+
+    const token = localStorage.getItem("accessToken") || "";
+    if (!token) {
+      setRepoUrlError("Please login to add repositories.");
+      setRepoUrlStatus("error");
+      setShowAddModal(true);
+      return;
+    }
+
+    const tempId = `temp-${Date.now()}`;
     const name = repoUrl.replace("https://github.com/", "").replace(".git", "");
+    setRepoUrlStatus("loading");
+    setRepoUrlError("");
     setRepos((prev) => [
       ...prev,
       {
-        id: String(Date.now()),
+        id: tempId,
         name: name || "new/repository",
         status: "processing",
         lastUpdated: "Just now",
@@ -386,8 +407,54 @@ const Dashboard = () => {
         source: "github",
       },
     ]);
-    setRepoUrl("");
     setShowAddModal(false);
+
+    try {
+      const response = await addPublicRepo(token, repoUrl.trim());
+      const payload = response.data;
+      if (!payload || !payload.repository) {
+        throw new Error("Unexpected response from server");
+      }
+
+      const repo = payload.repository;
+      const lastUpdated = repo.pushed_at || repo.updated_at || new Date().toISOString();
+      const nextStatus = mapStatus(payload.status);
+
+      setRepos((prev) =>
+        prev.map((r) =>
+          r.id === tempId
+            ? {
+                id: `gh_${String(repo.id)}`,
+                name: repo.full_name,
+                status: nextStatus,
+                lastUpdated: timeAgo(lastUpdated),
+                lastIndexedAt: repo.last_indexed_at,
+                hasChanges: repo.has_changes,
+                needsReindex: repo.needs_reindex,
+                files: payload.file_count ?? 0,
+                language: repo.language || "Unknown",
+                size: repo.size,
+                source: "github",
+                lastError: payload.error || undefined,
+              }
+            : r,
+        ),
+      );
+
+      if (payload.status === "ready") {
+        setActiveProject(`gh_${String(repo.id)}`, repo.full_name, "github");
+      }
+
+      setRepoUrl("");
+      await loadProfileAndRepos();
+    } catch (e) {
+      setRepos((prev) => prev.filter((r) => r.id !== tempId));
+      setRepoUrlError(e instanceof Error ? e.message : "Failed to add repository");
+      setRepoUrlStatus("error");
+      setShowAddModal(true);
+    } finally {
+      setRepoUrlStatus("idle");
+    }
   };
 
   const handleConnectRepo = (repoId: string) => {
@@ -905,11 +972,17 @@ const Dashboard = () => {
                   <input
                     type="text"
                     value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setRepoUrlError("");
+                    }}
                     placeholder="https://github.com/owner/repo"
                     className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
+                {repoUrlError && (
+                  <p className="mt-2 text-xs text-destructive">{repoUrlError}</p>
+                )}
               </div>
 
               <div className="relative flex items-center gap-3">
@@ -926,6 +999,7 @@ const Dashboard = () => {
                 onChange={(e) => {
                   setZipFile(e.target.files?.[0] ?? null);
                   setUploadError("");
+                  setRepoUrlError("");
                 }}
               />
               <button
@@ -947,12 +1021,14 @@ const Dashboard = () => {
 
               <button
                 onClick={handleAddRepo}
-                disabled={uploadStatus === "uploading"}
+                disabled={uploadStatus === "uploading" || repoUrlStatus === "loading"}
                 className="w-full rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
                 {uploadStatus === "uploading"
                   ? "Uploading..."
-                  : "Add Repository"}
+                  : repoUrlStatus === "loading"
+                    ? "Adding..."
+                    : "Add Repository"}
               </button>
             </div>
           </div>
