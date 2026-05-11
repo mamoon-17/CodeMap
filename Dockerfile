@@ -2,8 +2,8 @@
 FROM node:20-slim AS node-builder
 
 WORKDIR /build/backend
-COPY backend/package.json backend/package-lock.json ./
-RUN npm ci --legacy-peer-deps
+COPY backend/package.json ./
+RUN npm install
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
 RUN npm run build
@@ -29,8 +29,8 @@ COPY rag-pipeline/ ./
 
 # ── Node.js backend ───────────────────────────────────────────────────────────
 WORKDIR /app/backend
-COPY backend/package.json backend/package-lock.json ./
-RUN npm ci --omit=dev --legacy-peer-deps
+COPY backend/package.json ./
+RUN npm install --omit=dev
 COPY --from=node-builder /build/backend/dist ./dist
 
 # ── Startup script ────────────────────────────────────────────────────────────
