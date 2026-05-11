@@ -1,0 +1,9 @@
+.venv
+venv
+__pycache__
+.pytest_cache
+*.pyc
+chroma_db
+.env
+*.log
+.git

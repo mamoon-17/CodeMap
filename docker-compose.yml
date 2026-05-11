@@ -1,0 +1,53 @@
+services:
+  # ── Node.js Backend ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codemap-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override so backend reaches RAG via Docker DNS, not localhost
+      RAG_SERVICE_URL: http://rag-pipeline:5001
+    depends_on:
+      rag-pipeline:
+        condition: service_healthy
+    networks:
+      - codemap-net
+
+  # ── Python RAG Pipeline ───────────────────────────────────────────────────
+  rag-pipeline:
+    build:
+      context: ./rag-pipeline
+      dockerfile: Dockerfile
+    container_name: codemap-rag
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./rag-pipeline/.env
+    volumes:
+      # ChromaDB data persists across container restarts
+      - chroma_data:/app/chroma_db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - codemap-net
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  chroma_data:
+    name: codemap-chroma-data
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  codemap-net:
+    name: codemap-network
