@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { deleteAccount } from "@/services/api";
+import { applyTheme } from "@/lib/theme";
 
 const SETTINGS_KEYS = {
   pushNotifications: "settings.pushNotifications",
@@ -89,6 +90,7 @@ const Settings = () => {
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEYS.theme, theme);
+    applyTheme(theme);
   }, [theme]);
 
   const handleClearHistory = () => {
