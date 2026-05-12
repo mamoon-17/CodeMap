@@ -35,7 +35,7 @@ const corsOptions: cors.CorsOptions = {
 
 // Explicitly handle preflight OPTIONS requests across all routes BEFORE
 // body-parsing middleware so browsers get an immediate CORS response
-app.options("*", cors(corsOptions));
+app.options("(.*)", cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
