@@ -33,9 +33,6 @@ const corsOptions: cors.CorsOptions = {
   credentials: true,
 };
 
-// Explicitly handle preflight OPTIONS requests across all routes BEFORE
-// body-parsing middleware so browsers get an immediate CORS response
-app.options("(.*)", cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
@@ -54,7 +51,7 @@ const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
   // SPA fallback — let React Router handle all non-API routes
-  app.get("*", (_req: Request, res: Response) => {
+  app.use((_req: Request, res: Response) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
