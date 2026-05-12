@@ -37,6 +37,11 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 
+// Health check — hit /health to verify the backend is alive
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
 // Routes
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
