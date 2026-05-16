@@ -39,7 +39,12 @@ app.use(cookieParser());
 
 // Health check — hit /health to verify the backend is alive
 app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    service: "codemap-backend",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Routes
@@ -49,14 +54,13 @@ app.use("/query", queryRoutes);
 app.use("/projects", projectRoutes);
 app.use("/reindex", reindexRoutes);
 
-// Serve built React frontend in production (Docker monolith).
-// The frontend dist is copied to /app/frontend/dist by the Dockerfile.
-// In local dev this folder doesn't exist, so the block is skipped entirely.
+// Serve built React frontend if the dist folder is present alongside the backend.
+// In normal local dev this folder won't exist, so the block is silently skipped.
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
   // SPA fallback — let React Router handle all non-API routes
-  app.use((_req: Request, res: Response) => {
+  app.get("/*splat", (_req: Request, res: Response) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }

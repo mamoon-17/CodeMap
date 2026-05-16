@@ -1,5 +1,13 @@
 # CodeMap
 
+![version](https://img.shields.io/badge/version-1.0.0-blue)
+![status](https://img.shields.io/badge/status-active-brightgreen)
+![node](https://img.shields.io/badge/node-v20+-339933?logo=node.js&logoColor=white)
+![python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)
+![license](https://img.shields.io/badge/license-MIT-informational)
+![RAG](https://img.shields.io/badge/pipeline-agentic%20RAG-8A2BE2)
+![LLM](https://img.shields.io/badge/LLM-OpenAI%20function--calling-412991?logo=openai&logoColor=white)
+
 **AI-Powered Codebase Intelligence — Ask Questions, Get Answers**
 
 > Point CodeMap at any repository and start querying your codebase in plain English. Powered by a local RAG pipeline, semantic vector search, and an LLM with function-calling — no data leaves your infrastructure.
@@ -11,6 +19,12 @@
 CodeMap is a full-stack developer tool that transforms static codebases into queryable, searchable knowledge bases. It indexes your source code using semantic embeddings, stores them in a local ChromaDB vector store, and answers natural-language queries via an agentic RAG pipeline backed by OpenAI's function-calling API.
 
 Whether you're onboarding to a new codebase, hunting down where a specific pattern lives, or trying to understand a legacy system, CodeMap gives you an intelligent assistant that actually knows your code.
+
+---
+
+## Live Demo
+
+Live URL: (coming soon)
 
 ---
 
@@ -79,37 +93,38 @@ Whether you're onboarding to a new codebase, hunting down where a specific patte
 
 ### Frontend
 
-| Technology | Purpose |
-|---|---|
-| **React 18 + TypeScript** | UI framework |
-| **Vite** | Build tool & dev server |
-| **React Router v6** | Client-side routing |
-| **Tailwind CSS** | Utility-first styling |
-| **shadcn/ui (Radix UI)** | Accessible component primitives |
-| **Lucide React** | Icon set |
+| Technology                | Purpose                         |
+| ------------------------- | ------------------------------- |
+| **React 18 + TypeScript** | UI framework                    |
+| **Vite**                  | Build tool & dev server         |
+| **React Router v6**       | Client-side routing             |
+| **Tailwind CSS**          | Utility-first styling           |
+| **shadcn/ui (Radix UI)**  | Accessible component primitives |
+| **Lucide React**          | Icon set                        |
 
 ### Backend (Node.js)
 
-| Technology | Purpose |
-|---|---|
-| **Express + TypeScript** | HTTP server |
-| **TypeORM** | ORM & database migrations |
-| **PostgreSQL (Supabase)** | Primary database |
-| **Supabase Storage** | Crash-safe ZIP holding area |
-| **AdmZip** | In-memory ZIP extraction |
-| **JWT + bcrypt** | Auth tokens & password hashing |
-| **Multer** | Multipart file upload handling |
-| **neverthrow** | Type-safe Result/Error pattern |
+| Technology                | Purpose                                          |
+| ------------------------- | ------------------------------------------------ |
+| **Express + TypeScript**  | HTTP server                                      |
+| **TypeORM**               | ORM & database migrations                        |
+| **PostgreSQL (Supabase)** | Primary database                                 |
+| **Supabase Storage**      | ZIP upload holding area for storage-based ingest |
+| **AdmZip**                | ZIP validation before upload                     |
+| **JWT + bcrypt**          | Auth tokens & password hashing                   |
+| **Multer**                | Multipart file upload handling                   |
+| **neverthrow**            | Type-safe Result/Error pattern                   |
 
 ### RAG Pipeline (Python)
 
-| Technology | Purpose |
-|---|---|
-| **FastAPI + uvicorn** | Async HTTP service |
-| **sentence-transformers** | Local embedding model |
-| **ChromaDB** | Persistent local vector store |
-| **OpenAI API** | LLM with function-calling for agentic queries |
-| **pytest** | Test suite (retrieval quality, isolation, large repo) |
+| Technology                | Purpose                                               |
+| ------------------------- | ----------------------------------------------------- |
+| **FastAPI + uvicorn**     | Async HTTP service                                    |
+| **sentence-transformers** | Local embedding model                                 |
+| **ChromaDB**              | Persistent local vector store                         |
+| **OpenAI API**            | LLM with function-calling for agentic queries         |
+| **httpx**                 | Supabase Storage REST client (download/delete ZIPs)   |
+| **pytest**                | Test suite (retrieval quality, isolation, large repo) |
 
 ---
 
@@ -122,24 +137,33 @@ Whether you're onboarding to a new codebase, hunting down where a specific patte
 │             │ ◄─────────────── answers ─────────  │                  │
 └─────────────┘                                     └────────┬─────────┘
                                                              │
-                                          POST { file_path, content }[]
-                                                             │
-                                                    ┌────────▼─────────┐
-                                                    │  Python RAG API  │
-                                                    │  FastAPI / 5001  │
-                                                    │                  │
-                                                    │  chunk → embed   │
-                                                    │  → ChromaDB      │
-                                                    └──────────────────┘
+                               1. Upload raw ZIP             │
+                             ┌───────────────────► Supabase Storage
+                             │                     (codemap-projects)
+                             │                              │
+                             │  2. POST { storage_bucket,   │
+                             │     storage_path }            │
+                             │                     ┌────────▼─────────┐
+                             └────────────────────►│  Python RAG API  │
+                                                   │  FastAPI / 5001  │
+                                                   │                  │
+                                                   │  3. download ZIP │
+                                                   │  4. filter files │
+                                                   │  5. chunk→embed  │
+                                                   │     →ChromaDB    │
+                                                   │  6. delete ZIP   │
+                                                   └──────────────────┘
 ```
 
-**How ingestion works:**
+**How ingestion works (storage-based flow):**
 
-1. User uploads a ZIP or triggers a GitHub re-index
-2. Node.js downloads/extracts the archive and filters files in memory
-3. Node.js POSTs raw file text to the Python service — Python never touches storage
-4. Python chunks → embeds → upserts into ChromaDB
-5. For uploaded ZIPs, the original archive is held in Supabase Storage as a crash-safe backup; deleted immediately after a successful index
+1. User uploads a ZIP via the frontend
+2. Node.js validates the archive and uploads the **raw ZIP** to Supabase Storage
+3. Node.js calls FastAPI `POST /ingest/storage` with only `storage_bucket` + `storage_path` — no file content crosses the wire
+4. FastAPI downloads the ZIP from Supabase using its own service-role credentials
+5. FastAPI filters files (extensions, ignored dirs, binary detection, size limits)
+6. FastAPI chunks → embeds → upserts into ChromaDB
+7. On success, FastAPI deletes the ZIP from Supabase Storage; on failure, the object is kept for retry
 
 **How querying works:**
 
@@ -154,16 +178,14 @@ Whether you're onboarding to a new codebase, hunting down where a specific patte
 
 ```
 CodeMap/
-├── docker-compose.yml          # Production deployment (both services)
-│
 ├── backend/                    # Node.js / Express API
-│   ├── Dockerfile
+│   ├── .env.example
 │   ├── src/
 │   │   ├── app.ts              # Express app setup
 │   │   ├── server.ts           # Entry point
 │   │   ├── config/             # Config & TypeORM datasource
 │   │   ├── integrations/
-│   │   │   └── supabase/       # Storage client
+│   │   │   └── supabase/       # Storage client (upload/delete)
 │   │   ├── middleware/         # Auth, origin, CSRF guards
 │   │   └── modules/
 │   │       ├── auth/           # Signup, login, OAuth (Google + GitHub)
@@ -174,19 +196,21 @@ CodeMap/
 │   └── tests/                  # Integration tests
 │
 ├── rag-pipeline/               # Python / FastAPI RAG service
-│   ├── Dockerfile
+│   ├── .env.example
 │   ├── app.py                  # FastAPI app + lifespan (model warmup)
-│   ├── config.py               # Env config
+│   ├── config.py               # Env config (incl. Supabase credentials)
 │   ├── constants.py            # Shared constants
 │   ├── routers/
-│   │   ├── ingest.py           # POST /ingest
+│   │   ├── ingest.py           # POST /ingest, POST /ingest/storage
 │   │   ├── query.py            # POST /query
 │   │   └── projects.py         # GET files, GET file content, DELETE vectors
 │   ├── services/
 │   │   ├── embedder.py         # Chunking, embedding, ChromaDB upsert/query
 │   │   ├── chunker.py          # Language-aware smart chunking
 │   │   ├── rag_service.py      # Agentic LLM + function-calling
-│   │   ├── ingest_service.py   # Per-project concurrency locking
+│   │   ├── ingest_service.py   # Per-project concurrency locking + storage ingest
+│   │   ├── supabase_storage.py # Supabase Storage download/delete via httpx
+│   │   ├── zip_filter.py       # ZIP extraction and file filtering
 │   │   └── query_service.py    # Query orchestration
 │   ├── models/schemas.py       # Pydantic request/response models
 │   ├── chroma_db/              # Persisted vector store (gitignored)
@@ -222,62 +246,19 @@ CodeMap/
 - **Python** 3.11+
 - **PostgreSQL** (or a Supabase project)
 - **OpenAI API key**
-- **Docker + Docker Compose** (for containerised deployment)
+- **Supabase project** with a Storage bucket named `codemap-projects`
 
 ---
 
-### Option A — Docker Compose (Recommended)
-
-```bash
-git clone https://github.com/mamoon-17/CodeMap.git
-cd CodeMap
-```
-
-Fill in the two `.env` files:
-
-**`backend/.env`**
-```env
-SUPABASE_URI=postgresql://...
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
-PORT=5000
-FRONTEND_URL=http://localhost:5173
-JWT_ACCESS_SECRET=...
-JWT_REFRESH_SECRET=...
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
-```
-
-**`rag-pipeline/.env`**
-```env
-OPENAI_API_KEY=...
-PORT=5001
-FLASK_ENV=production
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-```
-
-Then:
-
-```bash
-docker compose up --build
-```
-
-- Node.js backend → `http://localhost:5000`
-- Python RAG service → `http://localhost:5001`
-- ChromaDB data persisted in a named Docker volume (`codemap-chroma-data`)
-
----
-
-### Option B — Local Development
+### Local Development
 
 **1. Backend**
 
 ```bash
 cd backend
 npm install
-# add backend/.env (see above)
+cp .env.example .env
+# Fill in your Supabase, OAuth, and JWT secrets
 npm run dev
 ```
 
@@ -289,7 +270,8 @@ python -m venv .venv
 .venv\Scripts\activate   # Windows
 # source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
-# add rag-pipeline/.env (see above)
+cp .env.example .env
+# Fill in OpenAI API key and Supabase credentials
 python app.py
 ```
 
@@ -311,29 +293,32 @@ npm run dev
 
 ### Backend (`backend/.env`)
 
-| Variable | Description |
-|---|---|
-| `SUPABASE_URI` | PostgreSQL connection string |
-| `SUPABASE_URL` | Supabase project URL (for Storage) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
-| `PORT` | Backend port (default `5000`) |
-| `FRONTEND_URL` | CORS allowed origin |
-| `JWT_ACCESS_SECRET` | Access token signing secret |
-| `JWT_REFRESH_SECRET` | Refresh token signing secret |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `GITHUB_CLIENT_ID` | GitHub OAuth app client ID |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret |
-| `RAG_SERVICE_URL` | Python service URL (default `http://localhost:5001`) |
+| Variable                    | Description                                          |
+| --------------------------- | ---------------------------------------------------- |
+| `SUPABASE_URI`              | PostgreSQL connection string                         |
+| `SUPABASE_URL`              | Supabase project URL (for Storage)                   |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key                            |
+| `PORT`                      | Backend port (default `5000`)                        |
+| `FRONTEND_URL`              | CORS allowed origin                                  |
+| `JWT_ACCESS_SECRET`         | Access token signing secret                          |
+| `JWT_REFRESH_SECRET`        | Refresh token signing secret                         |
+| `GOOGLE_CLIENT_ID`          | Google OAuth client ID                               |
+| `GOOGLE_CLIENT_SECRET`      | Google OAuth client secret                           |
+| `GITHUB_CLIENT_ID`          | GitHub OAuth app client ID                           |
+| `GITHUB_CLIENT_SECRET`      | GitHub OAuth app client secret                       |
+| `RAG_SERVICE_URL`           | Python service URL (default `http://localhost:5001`) |
 
 ### RAG Pipeline (`rag-pipeline/.env`)
 
-| Variable | Description |
-|---|---|
-| `OPENAI_API_KEY` | OpenAI API key |
-| `PORT` | FastAPI port (default `5001`) |
-| `FLASK_ENV` | `development` or `production` |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` (fast) or `all-mpnet-base-v2` (best) |
+| Variable                    | Description                                             |
+| --------------------------- | ------------------------------------------------------- |
+| `OPENAI_API_KEY`            | OpenAI API key                                          |
+| `PORT`                      | FastAPI port (default `5001`)                           |
+| `FLASK_ENV`                 | `development` or `production`                           |
+| `EMBEDDING_MODEL`           | `all-MiniLM-L6-v2` (fast) or `all-mpnet-base-v2` (best) |
+| `SUPABASE_URL`              | Supabase project URL (for downloading ZIPs)             |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key                               |
+| `SUPABASE_STORAGE_BUCKET`   | Storage bucket name (default `codemap-projects`)        |
 
 ---
 
@@ -341,56 +326,64 @@ npm run dev
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/auth/signup` | Register with email + password |
-| `POST` | `/auth/login` | Login, returns access token |
-| `POST` | `/auth/refresh` | Rotate access token via refresh cookie |
-| `POST` | `/auth/logout` | Invalidate refresh token |
-| `GET` | `/auth/google` | Start Google OAuth flow |
-| `GET` | `/auth/github/connect` | Connect GitHub to an existing account |
+| Method | Endpoint               | Description                            |
+| ------ | ---------------------- | -------------------------------------- |
+| `POST` | `/auth/signup`         | Register with email + password         |
+| `POST` | `/auth/login`          | Login, returns access token            |
+| `POST` | `/auth/refresh`        | Rotate access token via refresh cookie |
+| `POST` | `/auth/logout`         | Invalidate refresh token               |
+| `GET`  | `/auth/google`         | Start Google OAuth flow                |
+| `GET`  | `/auth/github/connect` | Connect GitHub to an existing account  |
 
 ### Users
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/users/me` | Get current user profile |
-| `PATCH` | `/users/me` | Update username / avatar URL |
-| `DELETE` | `/users/me` | Delete account |
-| `POST` | `/users/change-password` | Change password |
-| `GET` | `/users/repos` | List GitHub repos (requires connected account) |
+| Method   | Endpoint                 | Description                                    |
+| -------- | ------------------------ | ---------------------------------------------- |
+| `GET`    | `/users/me`              | Get current user profile                       |
+| `PATCH`  | `/users/me`              | Update username / avatar URL                   |
+| `DELETE` | `/users/me`              | Delete account                                 |
+| `POST`   | `/users/change-password` | Change password                                |
+| `GET`    | `/users/repos`           | List GitHub repos (requires connected account) |
 
 ### Projects (Uploaded ZIPs)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/projects` | List all uploaded projects |
-| `POST` | `/projects/upload` | Upload and index a ZIP archive |
-| `POST` | `/projects/:id/retry` | Retry a failed index from stored ZIP |
-| `DELETE` | `/projects/:id` | Delete project and its vectors |
-| `GET` | `/projects/:id/files` | List all indexed file paths |
-| `GET` | `/projects/:id/files/content` | Fetch indexed chunks for a file |
+| Method   | Endpoint                      | Description                          |
+| -------- | ----------------------------- | ------------------------------------ |
+| `GET`    | `/projects`                   | List all uploaded projects           |
+| `POST`   | `/projects/upload`            | Upload and index a ZIP archive       |
+| `POST`   | `/projects/:id/retry`         | Retry a failed index from stored ZIP |
+| `DELETE` | `/projects/:id`               | Delete project and its vectors       |
+| `GET`    | `/projects/:id/files`         | List all indexed file paths          |
+| `GET`    | `/projects/:id/files/content` | Fetch indexed chunks for a file      |
 
 ### Public Repos
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/projects/public-repos` | Link a public GitHub repo by URL |
-| `GET` | `/projects/public-repos` | List linked public repos |
-| `DELETE` | `/projects/public-repos/:id` | Remove a public repo link |
+| Method   | Endpoint                     | Description                      |
+| -------- | ---------------------------- | -------------------------------- |
+| `POST`   | `/projects/public-repos`     | Link a public GitHub repo by URL |
+| `GET`    | `/projects/public-repos`     | List linked public repos         |
+| `DELETE` | `/projects/public-repos/:id` | Remove a public repo link        |
 
 ### Re-index (GitHub)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/reindex` | Start a re-index job for a GitHub repo |
-| `GET` | `/reindex/:jobId` | Poll job status + logs |
+| Method | Endpoint          | Description                            |
+| ------ | ----------------- | -------------------------------------- |
+| `POST` | `/reindex`        | Start a re-index job for a GitHub repo |
+| `GET`  | `/reindex/:jobId` | Poll job status + logs                 |
 
 ### Query
 
-| Method | Endpoint | Description |
-|---|---|---|
+| Method | Endpoint | Description                                     |
+| ------ | -------- | ----------------------------------------------- |
 | `POST` | `/query` | Ask a natural-language question about a project |
+
+### RAG Pipeline (internal)
+
+| Method | Endpoint          | Description                                       |
+| ------ | ----------------- | ------------------------------------------------- |
+| `POST` | `/ingest`         | Ingest raw file payloads (used by GitHub reindex) |
+| `POST` | `/ingest/storage` | Ingest from Supabase Storage (used by ZIP upload) |
+| `GET`  | `/health`         | Health check                                      |
 
 ---
 
@@ -404,11 +397,11 @@ Files are automatically excluded if they are: binary, over 250 KB, or inside ign
 
 ## Embedding Models
 
-| Model | Size | Speed | Quality |
-|---|---|---|---|
-| `all-MiniLM-L6-v2` | 22 MB | ⚡ Fastest | Good |
-| `all-MiniLM-L12-v2` | 33 MB | Fast | Better |
-| `all-mpnet-base-v2` | 420 MB | Slower | Best |
+| Model               | Size   | Speed      | Quality |
+| ------------------- | ------ | ---------- | ------- |
+| `all-MiniLM-L6-v2`  | 22 MB  | ⚡ Fastest | Good    |
+| `all-MiniLM-L12-v2` | 33 MB  | Fast       | Better  |
+| `all-mpnet-base-v2` | 420 MB | Slower     | Best    |
 
 Set `EMBEDDING_MODEL` in `rag-pipeline/.env` to switch. The model is downloaded automatically on first run and cached locally.
 

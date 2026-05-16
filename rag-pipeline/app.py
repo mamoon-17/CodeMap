@@ -7,10 +7,13 @@ This service combines:
 - Vector search for code chunks via ChromaDB and sentence-transformers
 - Async operations with type safety
 """
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import anyio
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -67,11 +70,29 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Failed to warm up embedding model: {e}")
     
     logger.info(f"🎯 RAG service ready on port {config.PORT}")
+
+    # Start self-ping keepalive (prevents Render cold starts)
+    keepalive_task = asyncio.create_task(_self_ping_loop())
     
     yield
     
     # Shutdown
+    keepalive_task.cancel()
     logger.info("👋 Shutting down RAG service...")
+
+
+async def _self_ping_loop():
+    """Ping own /health every 10 minutes to prevent Render cold starts."""
+    interval = 10 * 60  # 10 minutes
+    url = f"http://localhost:{config.PORT}/health"
+    logger.info("[keepalive] Self-ping scheduled every %d min", interval // 60)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.get(url)
+        except Exception:
+            pass  # non-fatal
 
 
 # ---------------------------------------------------------------------------
@@ -85,15 +106,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware (allow local frontend dev origins)
+# CORS middleware — configurable via ALLOWED_ORIGINS env var for production.
+# Falls back to local dev origins if not set.
+_default_origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+]
+_env_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
+_origins = [o.strip() for o in _env_origins.split(",") if o.strip()] if _env_origins else _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

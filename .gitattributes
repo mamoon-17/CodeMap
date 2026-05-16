@@ -1,3 +1,0 @@
-# Force shell scripts to always use LF line endings in the repo
-# so they don't break inside Linux Docker containers on Windows machines
-*.sh text eol=lf
