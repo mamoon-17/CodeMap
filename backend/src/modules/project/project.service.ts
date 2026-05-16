@@ -6,139 +6,16 @@ import { AppDataSource } from "../../config/datasource";
 import { queryService } from "../query/query.service";
 import {
   deleteObject,
-  downloadObject,
   uploadObject,
 } from "../../integrations/supabase/supabaseClient";
 import { Project, ProjectStatus } from "./project.entity";
 import { RepositoryRecord } from "./repository.entity";
 
-const SUPPORTED_EXTENSIONS = new Set([
-  ".js",
-  ".ts",
-  ".py",
-  ".java",
-  ".cpp",
-  ".c",
-  ".cs",
-  ".go",
-  ".rb",
-  ".php",
-  ".swift",
-  ".kt",
-  ".rs",
-  ".html",
-  ".css",
-  ".json",
-  ".xml",
-  ".yaml",
-  ".yml",
-]);
-
 const STORAGE_BUCKET = "codemap-projects";
-const MAX_FILES_PER_UPLOAD = 500;
-const MAX_FILE_BYTES = 250_000;
-const MAX_FILTERED_ZIP_BYTES = 50 * 1024 * 1024;
-const FILTERED_ZIP_TOO_LARGE_MESSAGE =
-  "Upload failed: up to 50 MB source files are supported.";
-
-const IGNORED_DIR_SEGMENTS = [
-  "node_modules",
-  "bower_components",
-  "jspm_packages",
-  ".pnpm",
-  ".yarn",
-  "dist",
-  "build",
-  "out",
-  "coverage",
-  ".nyc_output",
-  ".next",
-  ".nuxt",
-  ".svelte-kit",
-  ".turbo",
-  ".cache",
-  ".venv",
-  "venv",
-  "env",
-  "ENV",
-  "site-packages",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  ".tox",
-  ".nox",
-  ".eggs",
-  ".gradle",
-  "target",
-  "bin",
-  "obj",
-  ".git",
-  ".svn",
-  ".hg",
-] as const;
-
-const IGNORED_FILE_NAMES = [
-  "package-lock.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "poetry.lock",
-  "pipfile.lock",
-  "composer.lock",
-  "cargo.lock",
-] as const;
 
 function sanitizeForKey(input: string): string {
   const base = path.basename(input);
   return base.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120) || "repo.zip";
-}
-
-function normalizeZipEntryPath(entryName: string): string {
-  const raw = entryName.replaceAll("\\", "/");
-  // `path.posix.normalize` will collapse ../ and ./ segments consistently
-  const normalized = path.posix.normalize(raw);
-  return normalized.replace(/^(\.\/)+/, "");
-}
-
-function shouldIgnorePath(normalizedPosixPath: string): boolean {
-  const parts = normalizedPosixPath.split("/").filter(Boolean);
-  const loweredParts = parts.map((part) => part.toLowerCase());
-  const fileName = loweredParts[loweredParts.length - 1];
-  return (
-    loweredParts.some((p) =>
-      (IGNORED_DIR_SEGMENTS as readonly string[]).includes(p),
-    ) ||
-    (fileName
-      ? (IGNORED_FILE_NAMES as readonly string[]).includes(fileName)
-      : false)
-  );
-}
-
-function isUnsafeZipEntryPath(entryName: string): boolean {
-  if (!entryName) return true;
-  if (entryName.includes("\u0000")) return true;
-  const normalized = normalizeZipEntryPath(entryName);
-  if (normalized === "." || normalized === "..") return true;
-  if (normalized.startsWith("../") || normalized.includes("/../")) return true;
-  if (normalized.startsWith("/")) return true;
-  // Windows drive-letter absolute paths inside zips (e.g. C:\foo)
-  if (/^[a-zA-Z]:\//.test(normalized)) return true;
-  return false;
-}
-
-function isProbablyBinary(buf: Buffer): boolean {
-  const sample = buf.subarray(0, Math.min(buf.length, 4096));
-  let suspicious = 0;
-  for (const b of sample) {
-    if (b === 0) return true;
-    const isAllowed =
-      b === 9 || // \t
-      b === 10 || // \n
-      b === 13 || // \r
-      (b >= 32 && b <= 126);
-    if (!isAllowed) suspicious += 1;
-  }
-  return sample.length > 0 && suspicious / sample.length > 0.2;
 }
 
 function isZipFile(zipPath: string): boolean {
@@ -152,47 +29,6 @@ function isZipFile(zipPath: string): boolean {
   } catch {
     return false;
   }
-}
-
-function buildIngestPayloadFromZip(zip: AdmZip): {
-  files: Array<{ file_path: string; content: string }>;
-  filePaths: string[];
-  filteredZipBytes: Buffer;
-  indexableBytes: number;
-} {
-  const files: Array<{ file_path: string; content: string }> = [];
-  const filePaths: string[] = [];
-  const filteredZip = new AdmZip();
-  let indexableBytes = 0;
-
-  for (const entry of zip.getEntries()) {
-    if (entry.isDirectory) continue;
-
-    const entryName = entry.entryName;
-    if (isUnsafeZipEntryPath(entryName)) {
-      throw new Error("Invalid entry path in ZIP file");
-    }
-
-    const normalized = normalizeZipEntryPath(entryName);
-    if (shouldIgnorePath(normalized)) continue;
-    const ext = path.posix.extname(normalized).toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
-
-    const data = entry.getData();
-    if (data.length > MAX_FILE_BYTES) continue;
-    if (isProbablyBinary(data)) continue;
-    if (indexableBytes + data.length > MAX_FILTERED_ZIP_BYTES) {
-      throw new Error(FILTERED_ZIP_TOO_LARGE_MESSAGE);
-    }
-    if (files.length >= MAX_FILES_PER_UPLOAD) break;
-    const content = data.toString("utf8");
-    files.push({ file_path: normalized, content });
-    filePaths.push(normalized);
-    filteredZip.addFile(normalized, data);
-    indexableBytes += data.length;
-  }
-
-  return { files, filePaths, filteredZipBytes: filteredZip.toBuffer(), indexableBytes };
 }
 
 class ProjectService {
@@ -237,35 +73,31 @@ class ProjectService {
         return err("Upload failed: File is not a valid ZIP archive");
       }
 
-      let zip: AdmZip;
+      // Quick sanity check: make sure it's a valid ZIP before uploading
       try {
-        zip = new AdmZip(zipPath);
-        // Force parsing to catch corrupt archives early
+        const zip = new AdmZip(zipPath);
         zip.getEntries();
       } catch {
         return err("Upload failed: Corrupt or unreadable ZIP archive");
       }
 
-      const { files, filePaths, filteredZipBytes } = buildIngestPayloadFromZip(zip);
-      if (files.length === 0) {
-        return err(
-          "Upload failed: No supported source files found in ZIP (allowed: .js, .ts, .py, .java, .cpp, .c, .cs, .go, .rb, .php, .swift, .kt, .rs, .html, .css, .json, .xml, .yaml, .yml)",
-        );
-      }
-
-      // Store only the filtered retry archive, not ignored folders/files.
+      // Upload raw (unfiltered) ZIP to Supabase Storage.
+      // FastAPI will handle filtering, chunking, and embedding.
+      const rawZipBytes = await fs.promises.readFile(zipPath);
       const keyName = sanitizeForKey(originalFilename || `${name}.zip`);
       storagePath = `projects/${saved.id}/${Date.now()}-${keyName}`;
-      await uploadObject(STORAGE_BUCKET, storagePath, filteredZipBytes, {
+      await uploadObject(STORAGE_BUCKET, storagePath, rawZipBytes, {
         contentType: "application/zip",
         upsert: false,
       });
       saved.zipStoragePath = storagePath;
       await repo.save(saved);
 
-      const ingestResult = await queryService.ingestFiles({
+      // Call FastAPI storage-based ingest — no file content sent over the wire
+      const ingestResult = await queryService.ingestFromStorage({
         project_id: saved.id,
-        files,
+        storage_bucket: STORAGE_BUCKET,
+        storage_path: storagePath,
         replace_project: true,
       });
       if (ingestResult.isErr()) {
@@ -273,29 +105,21 @@ class ProjectService {
         await repo.save(saved);
         return ok({
           project: saved,
-          files: filePaths,
+          files: [],
           indexingError: ingestResult.error,
         });
       }
 
       saved.status = ProjectStatus.READY;
-      saved.fileCount = files.length;
+      saved.fileCount = ingestResult.value.file_count;
       await repo.save(saved);
 
-      // Delete from bucket immediately after successful ingest
-      try {
-        await deleteObject(STORAGE_BUCKET, storagePath);
-        saved.zipStoragePath = null;
-        await repo.save(saved);
-      } catch (e) {
-        // If delete fails, keep path for later cleanup/retry; do not fail the request.
-        console.warn(
-          `[projectService] Failed to delete storage object ${storagePath}:`,
-          e instanceof Error ? e.message : String(e),
-        );
-      }
+      // FastAPI deletes the storage object on success.
+      // Clear the local reference so we don't try again.
+      saved.zipStoragePath = null;
+      await repo.save(saved);
 
-      return ok({ project: saved, files: filePaths });
+      return ok({ project: saved, files: [] });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (repo && saved) {
@@ -331,30 +155,12 @@ class ProjectService {
       project.status = ProjectStatus.INDEXING;
       await repo.save(project);
 
-      const zipArrayBuffer = await downloadObject(
-        STORAGE_BUCKET,
-        project.zipStoragePath,
-      );
-      const zipBytes = Buffer.from(zipArrayBuffer);
-
-      let zip: AdmZip;
-      try {
-        zip = new AdmZip(zipBytes);
-        zip.getEntries();
-      } catch {
-        return err("Retry failed: Corrupt or unreadable ZIP archive");
-      }
-
-      const { files } = buildIngestPayloadFromZip(zip);
-      if (files.length === 0) {
-        return err(
-          "Retry failed: No supported source files found in ZIP (allowed: .js, .ts, .py, .java, .cpp, .c, .cs, .go, .rb, .php, .swift, .kt, .rs, .html, .css, .json, .xml, .yaml, .yml)",
-        );
-      }
-
-      const ingestResult = await queryService.ingestFiles({
+      // Delegate entirely to FastAPI — it downloads, filters, indexes, and
+      // deletes the storage object on success.
+      const ingestResult = await queryService.ingestFromStorage({
         project_id: project.id,
-        files,
+        storage_bucket: STORAGE_BUCKET,
+        storage_path: project.zipStoragePath,
         replace_project: true,
       });
       if (ingestResult.isErr()) {
@@ -362,19 +168,12 @@ class ProjectService {
       }
 
       project.status = ProjectStatus.READY;
-      project.fileCount = files.length;
+      project.fileCount = ingestResult.value.file_count;
       await repo.save(project);
 
-      try {
-        await deleteObject(STORAGE_BUCKET, project.zipStoragePath);
-        project.zipStoragePath = null;
-        await repo.save(project);
-      } catch (e) {
-        console.warn(
-          `[projectService] Failed to delete storage object ${project.zipStoragePath}:`,
-          e instanceof Error ? e.message : String(e),
-        );
-      }
+      // FastAPI deleted the storage object on success — clear local ref
+      project.zipStoragePath = null;
+      await repo.save(project);
 
       return ok({ project, indexed: ingestResult.value.indexed });
     } catch (e) {

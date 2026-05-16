@@ -120,12 +120,36 @@ class FileInput(BaseModel):
 
 
 class IngestInput(BaseModel):
-    """Request model for repository ingestion"""
+    """Request model for repository ingestion (raw file payloads)"""
     project_id: str
     files: list[FileInput]
     replace_project: bool = False
 
 
+class StorageIngestInput(BaseModel):
+    """Request model for storage-based ingestion.
+
+    Node.js uploads the raw ZIP to Supabase Storage and sends only
+    the bucket + path.  FastAPI downloads, filters, indexes, and
+    deletes the object on success.
+    """
+    project_id: str = Field(..., min_length=1, description="Project identifier")
+    storage_bucket: str = Field(..., min_length=1, description="Supabase Storage bucket name")
+    storage_path: str = Field(..., min_length=1, description="Object path inside the bucket")
+    replace_project: bool = False
+
+    @field_validator("project_id")
+    @classmethod
+    def validate_project_id_storage(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("project_id is required")
+        if len(s) > 256 or not re.fullmatch(r"[a-zA-Z0-9_.-]+", s):
+            raise ValueError("project_id must be a non-empty alphanumeric id (max 256 chars)")
+        return s
+
+
 class IngestResponse(BaseModel):
     """Response model for ingestion"""
     indexed: int
+    file_count: int = 0

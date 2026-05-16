@@ -8,8 +8,16 @@ export interface IngestRequest {
   replace_project?: boolean;
 }
 
+export interface StorageIngestRequest {
+  project_id: string;
+  storage_bucket: string;
+  storage_path: string;
+  replace_project?: boolean;
+}
+
 export interface IngestResult {
   indexed: number;
+  file_count: number;
 }
 
 export interface DeleteVectorsResult {
@@ -131,6 +139,47 @@ class QueryService {
       return err(
         `Failed to ingest codebase via Python RAG service: ${message}`,
       );
+    }
+  }
+
+  /**
+   * Storage-based ingest — sends bucket + path to FastAPI.
+   * FastAPI downloads the ZIP from Supabase, filters, indexes, and
+   * deletes the object on success.
+   */
+  async ingestFromStorage(
+    request: StorageIngestRequest,
+  ): Promise<Result<IngestResult, string>> {
+    try {
+      console.log(
+        `[ingestFromStorage] Forwarding to ${this.ragServiceUrl}/ingest/storage (project_id=${request.project_id}, path=${request.storage_path})`,
+      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300_000);
+      const response = await fetch(`${this.ragServiceUrl}/ingest/storage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return err(`Python RAG service error ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as IngestResult;
+      if (!data || typeof data.indexed !== "number") {
+        return err("Invalid response from Python RAG service (ingest/storage)");
+      }
+
+      return ok(data);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return err("Python RAG service request timed out after 300 seconds");
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      return err(`Failed to ingest from storage: ${message}`);
     }
   }
 
